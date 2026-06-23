@@ -18,5 +18,14 @@ public static class RavenConventions
             type == typeof(DocumentPage)
                 ? "DocumentPages"
                 : DocumentConventions.DefaultGetCollectionName(type);
+
+        // Buffer materialized JSON request bodies so RavenDB's single-use BlittableJsonContent
+        // survives the transparent connection-retry SocketsHttpHandler performs against a TLS
+        // endpoint (mkcert-fronted ravendb.pew.local, RavenDB Cloud). Without this the retry
+        // re-serializes the body and throws "Already called previously, or called after
+        // EnsureCompletedAsync". See BufferedRequestContentHandler. The handler RavenDB hands us is
+        // pre-configured (client certificate, etc.), so we only wrap it.
+        store.Conventions.CreateHttpClient =
+            handler => new HttpClient(new BufferedRequestContentHandler(handler));
     }
 }

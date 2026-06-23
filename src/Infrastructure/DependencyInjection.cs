@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using Application.Common.Abstractions;
 using Application.Common.Interfaces;
 using Infrastructure.Persistence;
@@ -21,7 +22,8 @@ public static class DependencyInjection
         IDocumentStore store = new DocumentStore
         {
             Urls = options.Urls,
-            Database = options.Database
+            Database = options.Database,
+            Certificate = LoadCertificate(options)
         };
         RavenConventions.Apply(store);
         store.Initialize();
@@ -39,5 +41,22 @@ public static class DependencyInjection
         services.AddHostedService<IndexInitializerHostedService>();
 
         return services;
+    }
+
+    // A secured RavenDB cluster (e.g. RavenDB Cloud over https) authenticates the client with an
+    // X.509 client certificate; an unsecured store — including the TLS-fronted but open
+    // ravendb.pew.local — needs none. Returning null leaves the store unauthenticated.
+    private static X509Certificate2? LoadCertificate(RavenDbOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.CertificatePath))
+            return null;
+
+        if (!File.Exists(options.CertificatePath))
+            throw new FileNotFoundException(
+                $"RavenDB client certificate not found at '{options.CertificatePath}'.", options.CertificatePath);
+
+        return X509CertificateLoader.LoadPkcs12FromFile(
+            options.CertificatePath,
+            string.IsNullOrEmpty(options.CertificatePassword) ? null : options.CertificatePassword);
     }
 }
