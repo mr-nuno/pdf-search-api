@@ -37,7 +37,7 @@ EF/SQL-specific conventions are superseded by the rules below.
   (Raven has no auto-audit) — the global "never set audit fields manually" rule does not apply.
 
 ## Routes & auth
-- Routes use the global `/v{n}/...` pattern (e.g. `GET /v1/search`, `POST /v1/documents`) — no `/api/`.
+- Routes are unversioned per the global convention (e.g. `GET /search`, `POST /documents`) — no `/api/` and no `/v{n}/` prefix.
 - Entra-ID JWT auth is scaffolded per global conventions, but functional endpoints are
   `AllowAnonymous()` (the system has no authorization model). Add `Policies(...)` to gate later.
 

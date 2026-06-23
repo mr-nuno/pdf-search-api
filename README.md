@@ -53,20 +53,20 @@ Store conventions live in one place: `RavenConventions.Apply(IDocumentStore)`.
 
 ## API
 
-Routes follow the `/v{n}/...` pattern. Functional endpoints are `AllowAnonymous()` (no authorization
-model yet — the Entra-ID JWT pipeline is scaffolded for later gating).
+Functional endpoints are `AllowAnonymous()` (no authorization model yet — the Entra-ID JWT pipeline
+is scaffolded for later gating).
 
 ### Ingest a PDF
 
 ```
-POST /v1/documents
+POST /documents
 Content-Type: multipart/form-data
 ```
 
 Field `File` — the PDF to ingest. Text is extracted page-by-page; whitespace-only pages are skipped.
 
 ```bash
-curl -F "File=@sample.pdf" http://localhost:5041/v1/documents
+curl -F "File=@sample.pdf" http://localhost:5041/documents
 ```
 
 ```jsonc
@@ -80,13 +80,13 @@ curl -F "File=@sample.pdf" http://localhost:5041/v1/documents
 ### Full-text search
 
 ```
-GET /v1/search?query={term}
+GET /search?query={term}
 ```
 
 Returns up to **25** matched pages ordered by relevance.
 
 ```bash
-curl "http://localhost:5041/v1/search?query=invoice"
+curl "http://localhost:5041/search?query=invoice"
 ```
 
 ```jsonc

@@ -17,7 +17,7 @@ public sealed class IngestDocumentTests(RavenTestFactory factory) : IClassFixtur
         HttpClient client = factory.CreateClient();
         byte[] pdf = TestPdf.Create("first page content", "   ", "third page content");
 
-        var (status, body) = await client.PostPdfAsync<IngestDocumentResponse>("/v1/documents", pdf, "report.pdf");
+        var (status, body) = await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdf, "report.pdf");
 
         status.ShouldBe(HttpStatusCode.Created);
         body.ShouldNotBeNull();
@@ -33,7 +33,7 @@ public sealed class IngestDocumentTests(RavenTestFactory factory) : IClassFixtur
         HttpClient client = factory.CreateClient();
         byte[] notPdf = Encoding.UTF8.GetBytes("just some text");
 
-        var (status, body) = await client.PostPdfAsync<IngestDocumentResponse>("/v1/documents", notPdf, "notes.txt");
+        var (status, body) = await client.PostPdfAsync<IngestDocumentResponse>("/documents", notPdf, "notes.txt");
 
         status.ShouldBe(HttpStatusCode.BadRequest);
         body.ShouldNotBeNull();
