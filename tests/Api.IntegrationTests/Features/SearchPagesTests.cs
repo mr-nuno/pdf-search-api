@@ -20,12 +20,12 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
         // Unique token avoids collisions with other tests sharing the database.
         const string token = "zentilworp";
         byte[] pdf = TestPdf.Create($"intro page", $"the {token} appears on page two");
-        var ingest = await client.PostPdfAsync<IngestDocumentResponse>("/v1/documents", pdf, "manual.pdf");
+        var ingest = await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdf, "manual.pdf");
         ingest.Status.ShouldBe(HttpStatusCode.Created);
 
         factory.WaitForIndexing();
 
-        var (status, body) = await client.GetApiAsync<SearchResponseDto>($"/v1/search?query={token}");
+        var (status, body) = await client.GetApiAsync<SearchResponseDto>($"/search?query={token}");
 
         status.ShouldBe(HttpStatusCode.OK);
         body.ShouldNotBeNull();
@@ -45,7 +45,7 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
     {
         HttpClient client = factory.CreateClient();
 
-        var (status, body) = await client.GetApiAsync<SearchResponseDto>("/v1/search?query=");
+        var (status, body) = await client.GetApiAsync<SearchResponseDto>("/search?query=");
 
         status.ShouldBe(HttpStatusCode.BadRequest);
         body.ShouldNotBeNull();

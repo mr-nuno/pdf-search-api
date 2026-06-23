@@ -6,13 +6,13 @@ using MediatR;
 
 namespace Api.Endpoints.Documents;
 
-/// <summary>POST /v1/documents — ingest a PDF, storing each non-empty page as a searchable document.</summary>
+/// <summary>POST /documents — ingest a PDF, storing each non-empty page as a searchable document.</summary>
 public sealed class IngestDocumentEndpoint(ISender sender)
     : Endpoint<IngestDocumentRequest, ApiResponse<IngestDocumentResponse>>
 {
     public override void Configure()
     {
-        Post("/v1/documents");
+        Post("/documents");
         AllowAnonymous();
         AllowFileUploads();
         Tags("Documents");

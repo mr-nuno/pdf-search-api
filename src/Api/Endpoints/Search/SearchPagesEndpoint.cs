@@ -6,13 +6,13 @@ using MediatR;
 
 namespace Api.Endpoints.Search;
 
-/// <summary>GET /v1/search?query= — full-text search across ingested PDF pages.</summary>
+/// <summary>GET /search?query= — full-text search across ingested PDF pages.</summary>
 public sealed class SearchPagesEndpoint(ISender sender)
     : EndpointWithoutRequest<ApiResponse<SearchResponseDto>>
 {
     public override void Configure()
     {
-        Get("/v1/search");
+        Get("/search");
         AllowAnonymous();
         Tags("Search");
         Summary(s =>
