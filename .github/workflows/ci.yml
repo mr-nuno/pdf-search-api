@@ -2,10 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [ '**' ]   # run build+test on every branch push so PRs show status checks
+    branches: [ '**' ]   # run build+test on every branch push; checks attach to the SHA, so PRs still show status
     tags: [ '*.*.*' ]
-  pull_request:
-    branches: [ main ]
 
 # Cancel superseded runs for the same ref (each tag ref is unique, so releases aren't cancelled).
 concurrency:
