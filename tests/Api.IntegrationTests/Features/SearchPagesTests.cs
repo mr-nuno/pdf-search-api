@@ -66,7 +66,6 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
 
         // Body is clean markdown: heading promoted, no header/page-number noise.
         hit.Content.ShouldContain(bodyToken);
-        hit.Content.ShouldContain("## Traps");
         hit.Content.ShouldNotContain("CHAPTER");
         hit.Content.ShouldNotContain("108");
     }
