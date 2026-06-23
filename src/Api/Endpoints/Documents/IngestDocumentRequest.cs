@@ -7,8 +7,8 @@ public sealed class IngestDocumentRequest
 {
     public IFormFile File { get; set; } = default!;
 
-    [BindFrom("tag")]
-    public string? Tag { get; set; }
+    [BindFrom("tags")]
+    public List<string>? Tags { get; set; }
 }
 
 /// <summary>HTTP-level validation for the upload (file present, .pdf, non-empty).</summary>

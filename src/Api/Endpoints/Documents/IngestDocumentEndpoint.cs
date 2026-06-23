@@ -21,7 +21,7 @@ public sealed class IngestDocumentEndpoint(ISender sender)
             s.Summary = "Ingest a PDF document";
             s.Description = "Extracts text page-by-page from the uploaded PDF and stores each non-empty "
                 + "page as an independent document in RavenDB for full-text search.";
-            s.Params["tag"] = "An optional tag to categorize the ingested document.";
+            s.Params["tags"] = "Optional tags to categorize the ingested document (repeat the field for multiple tags, stored lowercase).";
             s.Response<ApiResponse<IngestDocumentResponse>>(201, "Document ingested");
             s.Response<ApiResponse<IngestDocumentResponse>>(400, "Invalid or empty file");
         });
@@ -31,7 +31,7 @@ public sealed class IngestDocumentEndpoint(ISender sender)
     {
         await using var stream = req.File.OpenReadStream();
 
-        var result = await sender.Send(new IngestDocumentCommand(stream, req.File.FileName, req.Tag), ct);
+        var result = await sender.Send(new IngestDocumentCommand(stream, req.File.FileName, req.Tags), ct);
         await Send.ResponseAsync(result.ToApiResponse(), result.IsSuccess ? 201 : result.ToHttpStatusCode(), ct);
     }
 }

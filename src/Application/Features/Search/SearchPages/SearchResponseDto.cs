@@ -5,7 +5,7 @@ public sealed record SearchResultDto(
     int PhysicalPageNumber,
     string? Header,
     string Content,
-    string Tag,
+    List<string> Tags,
     double SearchScore);
 
 public sealed record SearchResponseDto(

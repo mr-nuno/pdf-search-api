@@ -11,7 +11,7 @@ using Serilog;
 
 namespace Application.Features.Search.SearchPages;
 
-public sealed record SearchPagesQuery(string Query, string? Tag) : IRequest<Result<SearchResponseDto>>
+public sealed record SearchPagesQuery(string Query, List<string>? Tags) : IRequest<Result<SearchResponseDto>>
 {
     public sealed class Handler(IApplicationDbContext db)
         : IRequestHandler<SearchPagesQuery, Result<SearchResponseDto>>
@@ -26,9 +26,14 @@ public sealed record SearchPagesQuery(string Query, string? Tag) : IRequest<Resu
                 .Search(x => x.Content, request.Query)
                 .Search(x => x.Header, request.Query);
 
-            if (!string.IsNullOrWhiteSpace(request.Tag))
+            if (request.Tags is { Count: > 0 })
             {
-                query = query.Where(x => x.Tag == request.Tag);
+                var normalizedTags = request.Tags
+                    .Select(t => t.Trim().ToLowerInvariant())
+                    .Where(t => t.Length > 0)
+                    .ToList();
+                if (normalizedTags.Count > 0)
+                    query = query.Where(x => x.Tags.ContainsAny(normalizedTags));
             }
 
             var pages = await query
@@ -44,7 +49,7 @@ public sealed record SearchPagesQuery(string Query, string? Tag) : IRequest<Resu
                         page.PageNumber,
                         page.Header,
                         content,
-                        page.Tag,
+                        page.Tags,
                         db.IndexScore(page));
                 })
                 .ToList();

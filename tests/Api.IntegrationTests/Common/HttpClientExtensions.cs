@@ -21,17 +21,15 @@ public static class HttpClientExtensions
 
     /// <summary>Uploads a PDF as multipart/form-data to a file-upload endpoint.</summary>
     public static async Task<(System.Net.HttpStatusCode Status, ApiResponse<T>? Body)> PostPdfAsync<T>(
-        this HttpClient client, string url, byte[] pdf, string fileName, string? tag = null, CancellationToken ct = default)
+        this HttpClient client, string url, byte[] pdf, string fileName, IEnumerable<string>? tags = null, CancellationToken ct = default)
     {
         using var form = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(pdf);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(fileContent, "File", fileName);
 
-        if (tag != null)
-        {
-            form.Add(new StringContent(tag), "tag");
-        }
+        foreach (var tag in tags ?? [])
+            form.Add(new StringContent(tag), "tags");
 
         var response = await client.PostAsync(url, form, ct);
         var content = await response.Content.ReadAsStringAsync(ct);
