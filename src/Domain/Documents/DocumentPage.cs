@@ -17,6 +17,13 @@ public sealed class DocumentPage
 
     public int PageNumber { get; set; }
 
+    /// <summary>The running-header text for the page (e.g. a chapter title), or <c>null</c>.</summary>
+    public string? Header { get; set; }
+
+    /// <summary>The printed page number, separate from <see cref="PageNumber"/>, or <c>null</c>.</summary>
+    public string? PageLabel { get; set; }
+
+    /// <summary>The page body as markdown, excluding header/footer and page number.</summary>
     public string Content { get; set; } = string.Empty;
 
     public DateTimeOffset IngestedAt { get; set; }

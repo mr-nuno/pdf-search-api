@@ -1,7 +1,13 @@
 namespace Application.Common.Abstractions;
 
-/// <summary>Text extracted from a single PDF page.</summary>
-public sealed record PdfPageText(int PageNumber, string Text);
+/// <summary>Layout-aware text extracted from a single PDF page.</summary>
+/// <param name="PageNumber">The 1-based physical page index within the source PDF.</param>
+/// <param name="Content">The page body, formatted as markdown (paragraphs separated by blank
+/// lines, large lines promoted to headings). Excludes running headers/footers and page numbers.</param>
+/// <param name="Header">The running-header text for the page, or <c>null</c> if none was detected.</param>
+/// <param name="PageLabel">The printed page number (a numeric-only token found in the
+/// header/footer band), or <c>null</c> if none was detected. Distinct from <see cref="PageNumber"/>.</param>
+public sealed record PdfPageText(int PageNumber, string Content, string? Header, string? PageLabel);
 
 /// <summary>
 /// Abstracts per-page PDF text extraction so handlers stay unit-testable and never call the

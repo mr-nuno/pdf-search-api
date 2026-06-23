@@ -28,7 +28,9 @@ public sealed record IngestDocumentCommand(Stream Content, string FileName)
                 {
                     SourceFileName = request.FileName,
                     PageNumber = page.PageNumber,
-                    Content = page.Text,
+                    Header = page.Header,
+                    PageLabel = page.PageLabel,
+                    Content = page.Content,
                     IngestedAt = dateTime.UtcNow
                 };
 
