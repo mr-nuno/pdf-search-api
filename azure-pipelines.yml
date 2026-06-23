@@ -1,0 +1,51 @@
+# Azure Pipelines — mirrors .github/workflows/ci.yml behaviour.
+# Build + test on main; on a semantic version tag, also build & push the Docker image to ghcr.io.
+
+trigger:
+  branches:
+    include:
+      - main
+  tags:
+    include:
+      - '*.*.*'
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: Release
+
+steps:
+  - task: UseDotNet@2
+    displayName: Setup .NET
+    inputs:
+      useGlobalJson: true
+
+  - script: dotnet restore
+    displayName: Restore
+
+  - script: dotnet build --no-restore -c $(buildConfiguration)
+    displayName: Build
+
+  # Integration tests run a real RavenDB via RavenDB.TestDriver (embedded server).
+  - script: dotnet test --no-build -c $(buildConfiguration)
+    displayName: Test
+
+  # On a tag, build and push the image. Requires a 'ghcr' Docker service connection.
+  - task: Docker@2
+    displayName: Build & Push Image
+    condition: startsWith(variables['Build.SourceBranch'], 'refs/tags/')
+    inputs:
+      command: buildAndPush
+      containerRegistry: ghcr
+      repository: $(Build.Repository.Name)
+      Dockerfile: Dockerfile
+      tags: |
+        $(Build.SourceBranchName)
+        latest
+      arguments: '--build-arg VERSION=$(Build.SourceBranchName)'

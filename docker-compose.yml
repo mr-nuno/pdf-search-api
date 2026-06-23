@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: .
+      args:
+        VERSION: 1.0.0
+    ports:
+      - "5000:8080"
+    depends_on:
+      - ravendb
+      - seq
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_HTTP_PORTS=8080
+      - RavenDb__Urls__0=http://ravendb:8080
+      - RavenDb__Database=PdfSearch
+      - Serilog__WriteTo__1__Args__serverUrl=http://seq:5341
+
+  ravendb:
+    image: ravendb/ravendb:latest
+    ports:
+      - "8080:8080"   # RavenDB Studio + client API
+      - "38888:38888" # cluster/tcp
+    environment:
+      - RAVEN_Setup_Mode=None
+      - RAVEN_License_Eula_Accepted=true
+      - RAVEN_Security_UnsecuredAccessAllowed=PrivateNetwork
+    volumes:
+      - ravendb-data:/var/lib/ravendb/data
+
+  seq:
+    image: datalust/seq:latest
+    ports:
+      - "5341:5341"
+      - "8081:80"
+    environment:
+      - ACCEPT_EULA=Y
+      - SEQ_FIRSTRUN_NOAUTHENTICATION=true
+
+volumes:
+  ravendb-data:
