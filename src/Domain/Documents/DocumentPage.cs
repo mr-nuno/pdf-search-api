@@ -11,6 +11,8 @@ namespace Domain.Documents;
 /// </remarks>
 public sealed class DocumentPage
 {
+    public const string DefaultTag = "none";
+
     public string Id { get; set; } = string.Empty;
 
     public string SourceFileName { get; set; } = string.Empty;
@@ -27,4 +29,6 @@ public sealed class DocumentPage
     public string Content { get; set; } = string.Empty;
 
     public DateTimeOffset IngestedAt { get; set; }
+
+    public string Tag { get; set; } = DefaultTag;
 }

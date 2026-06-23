@@ -67,9 +67,10 @@ Content-Type: multipart/form-data
 Field `File` — the PDF to ingest. Text is extracted page-by-page using layout analysis: line and
 paragraph breaks are preserved, the running header and printed page number are separated from the
 body, and the body is stored as markdown. Whitespace-only pages are skipped.
+Field `tag` (optional) — string to categorize the ingested document. Defaults to "none".
 
 ```bash
-curl -F "File=@sample.pdf" http://localhost:5041/documents
+curl -F "File=@sample.pdf" -F "tag=finance" http://localhost:5041/documents
 ```
 
 ```jsonc
@@ -83,13 +84,13 @@ curl -F "File=@sample.pdf" http://localhost:5041/documents
 ### Full-text search
 
 ```
-GET /search?query={term}
+GET /search?query={term}&tag={optional_tag}
 ```
 
-Returns up to **25** matched pages ordered by relevance.
+Returns up to **25** matched pages ordered by relevance. The `tag` parameter can be used to filter the search results. If omitted, all tags are searched.
 
 ```bash
-curl "http://localhost:5041/search?query=invoice"
+curl "http://localhost:5041/search?query=invoice&tag=finance"
 ```
 
 ```jsonc
@@ -106,6 +107,7 @@ curl "http://localhost:5041/search?query=invoice"
         "header": "KAPITEL 8 – ÄVENTYR",
         "pageLabel": "108",
         "content": "## Fällor\n\n…matched body text…",
+        "tag": "finance",
         "searchScore": 1.87
       }
     ]
