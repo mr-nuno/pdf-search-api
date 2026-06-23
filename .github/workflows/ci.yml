@@ -2,10 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ '**' ]   # run build+test on every branch push so PRs show status checks
     tags: [ '*.*.*' ]
   pull_request:
     branches: [ main ]
+
+# Cancel superseded runs for the same ref (each tag ref is unique, so releases aren't cancelled).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-test:
