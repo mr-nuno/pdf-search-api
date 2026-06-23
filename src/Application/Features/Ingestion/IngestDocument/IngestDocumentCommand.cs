@@ -30,7 +30,6 @@ public sealed record IngestDocumentCommand(Stream Content, string FileName, stri
                     SourceFileName = request.FileName,
                     PageNumber = page.PageNumber,
                     Header = page.Header,
-                    PageLabel = page.PageLabel,
                     Content = page.Content,
                     IngestedAt = dateTime.UtcNow,
                     Tag = tag

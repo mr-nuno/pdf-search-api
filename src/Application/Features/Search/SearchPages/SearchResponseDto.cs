@@ -2,9 +2,8 @@ namespace Application.Features.Search.SearchPages;
 
 public sealed record SearchResultDto(
     string SourceFileName,
-    int PageNumber,
+    int PhysicalPageNumber,
     string? Header,
-    string? PageLabel,
     string Content,
     string Tag,
     double SearchScore);
