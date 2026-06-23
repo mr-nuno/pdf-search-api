@@ -24,7 +24,7 @@ public sealed class IndexInitializerHostedService(IDocumentStore store) : IHoste
 
     private async Task EnsureDatabaseExistsAsync(CancellationToken ct)
     {
-        DatabaseRecordWithEtag? record =
+        var record =
             await store.Maintenance.Server.SendAsync(new GetDatabaseRecordOperation(store.Database), ct);
 
         if (record is not null)

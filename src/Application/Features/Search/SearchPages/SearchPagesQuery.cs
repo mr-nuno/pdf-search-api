@@ -20,14 +20,14 @@ public sealed record SearchPagesQuery(string Query) : IRequest<Result<SearchResp
 
         public async Task<Result<SearchResponseDto>> Handle(SearchPagesQuery request, CancellationToken ct)
         {
-            List<DocumentPage> pages = await db.DocumentPages
-                .Statistics(out QueryStatistics stats)
+            var pages = await db.DocumentPages
+                .Statistics(out var stats)
                 .Search(x => x.Content, request.Query)
                 .Search(x => x.Header, request.Query)
                 .Take(MaxResults)
                 .ToListAsync(ct);
 
-            List<SearchResultDto> results = pages
+            var results = pages
                 .Select(page => new SearchResultDto(
                     page.SourceFileName,
                     page.PageNumber,

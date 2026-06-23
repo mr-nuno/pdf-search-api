@@ -31,8 +31,8 @@ public static class DependencyInjection
     // handler only runs when an endpoint requires authorization, so empty local config is fine.
     private static void AddEntraIdAuthentication(IServiceCollection services, IConfiguration configuration)
     {
-        IConfigurationSection entra = configuration.GetSection("EntraId");
-        string? tenantId = entra["TenantId"];
+        var entra = configuration.GetSection("EntraId");
+        var tenantId = entra["TenantId"];
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>

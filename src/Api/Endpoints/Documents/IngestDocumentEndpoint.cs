@@ -28,7 +28,7 @@ public sealed class IngestDocumentEndpoint(ISender sender)
 
     public override async Task HandleAsync(IngestDocumentRequest req, CancellationToken ct)
     {
-        await using Stream stream = req.File.OpenReadStream();
+        await using var stream = req.File.OpenReadStream();
 
         var result = await sender.Send(new IngestDocumentCommand(stream, req.File.FileName), ct);
         await Send.ResponseAsync(result.ToApiResponse(), result.IsSuccess ? 201 : result.ToHttpStatusCode(), ct);

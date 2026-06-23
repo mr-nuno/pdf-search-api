@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using Application.Common.Abstractions;
+using Application.Common.Interfaces;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
@@ -30,11 +30,11 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
 
     public IEnumerable<PdfPageText> Extract(Stream pdfStream)
     {
-        using PdfDocument document = PdfDocument.Open(pdfStream);
+        using var document = PdfDocument.Open(pdfStream);
 
-        foreach (Page page in document.GetPages())
+        foreach (var page in document.GetPages())
         {
-            PdfPageText? extracted = ExtractPage(page);
+            var extracted = ExtractPage(page);
             if (extracted is not null)
             {
                 yield return extracted;
@@ -52,25 +52,25 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
             return null;
         }
 
-        List<Line> lines = GroupIntoLines(words);
+        var lines = GroupIntoLines(words);
 
-        double headerThreshold = page.Height * HeaderBandTop;
-        double footerThreshold = page.Height * FooterBandBottom;
+        var headerThreshold = page.Height * HeaderBandTop;
+        var footerThreshold = page.Height * FooterBandBottom;
 
         var headerLines = new List<string>();
         var bodyLines = new List<Line>();
         string? pageLabel = null;
 
-        foreach (Line line in lines)
+        foreach (var line in lines)
         {
-            bool inHeaderBand = line.CenterY >= headerThreshold;
-            bool inFooterBand = line.CenterY <= footerThreshold;
+            var inHeaderBand = line.CenterY >= headerThreshold;
+            var inFooterBand = line.CenterY <= footerThreshold;
 
             if (inHeaderBand || inFooterBand)
             {
                 // A numeric-only token in a margin band is the printed page number; whatever
                 // header text remains stays as the running header (footer prose is dropped).
-                string remainder = TakePageLabel(line, ref pageLabel);
+                var remainder = TakePageLabel(line, ref pageLabel);
                 if (remainder.Length > 0 && inHeaderBand)
                 {
                     headerLines.Add(remainder);
@@ -82,8 +82,8 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
             }
         }
 
-        string? header = headerLines.Count > 0 ? string.Join(" ", headerLines) : null;
-        string content = BuildMarkdown(bodyLines);
+        var header = headerLines.Count > 0 ? string.Join(" ", headerLines) : null;
+        var content = BuildMarkdown(bodyLines);
 
         if (content.Length == 0 && header is null)
         {
@@ -97,17 +97,17 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
     /// ordered top-to-bottom and, within each line, left-to-right.</summary>
     private static List<Line> GroupIntoLines(IReadOnlyList<Word> words)
     {
-        double medianHeight = Median(words.Select(w => w.BoundingBox.Height));
-        double tolerance = Math.Max(medianHeight * 0.5, 1.0);
+        var medianHeight = Median(words.Select(w => w.BoundingBox.Height));
+        var tolerance = Math.Max(medianHeight * 0.5, 1.0);
 
         // Sort top-to-bottom (PDF Y grows upward, so larger centre = higher on the page) so that
         // words belonging to one line are contiguous and a new line starts on a vertical jump.
-        List<Word> ordered = words.OrderByDescending(w => CenterY(w.BoundingBox)).ToList();
+        var ordered = words.OrderByDescending(w => CenterY(w.BoundingBox)).ToList();
 
         var buckets = new List<List<Word>>();
-        foreach (Word word in ordered)
+        foreach (var word in ordered)
         {
-            double y = CenterY(word.BoundingBox);
+            var y = CenterY(word.BoundingBox);
             if (buckets.Count == 0 || Math.Abs(CenterY(buckets[^1][0].BoundingBox) - y) > tolerance)
             {
                 buckets.Add([word]);
@@ -119,9 +119,9 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
         }
 
         var lines = new List<Line>(buckets.Count);
-        foreach (List<Word> bucket in buckets)
+        foreach (var bucket in buckets)
         {
-            List<Word> sorted = bucket.OrderBy(w => w.BoundingBox.Left).ToList();
+            var sorted = bucket.OrderBy(w => w.BoundingBox.Left).ToList();
             lines.Add(new Line(
                 Text: string.Join(" ", sorted.Select(w => w.Text)),
                 CenterY: sorted.Average(w => CenterY(w.BoundingBox)),
@@ -138,10 +138,10 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
     /// considered, so a numeral embedded between header words (e.g. the "8" in "KAPITEL 8") is kept.</summary>
     private static string TakePageLabel(Line line, ref string? pageLabel)
     {
-        IReadOnlyList<Word> words = line.Words;
+        var words = line.Words;
 
         // Only the first and last token of the line are page-number candidates (the corners).
-        int labelIndex = -1;
+        var labelIndex = -1;
         if (pageLabel is null)
         {
             if (NumericOnly().IsMatch(words[0].Text.Trim()))
@@ -160,7 +160,7 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
         }
 
         var kept = new List<string>();
-        for (int i = 0; i < words.Count; i++)
+        for (var i = 0; i < words.Count; i++)
         {
             if (i != labelIndex)
             {
@@ -180,10 +180,10 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
             return string.Empty;
         }
 
-        double bodyFont = Median(bodyLines.SelectMany(l => l.Words)
+        var bodyFont = Median(bodyLines.SelectMany(l => l.Words)
             .SelectMany(w => w.Letters).Select(l => l.PointSize));
-        double medianHeight = Median(bodyLines.Select(l => l.Height));
-        double paragraphGap = Math.Max(medianHeight * 1.6, 1.0);
+        var medianHeight = Median(bodyLines.Select(l => l.Height));
+        var paragraphGap = Math.Max(medianHeight * 1.6, 1.0);
 
         var sb = new StringBuilder();
         var paragraph = new List<Line>();
@@ -195,12 +195,12 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
                 return;
             }
 
-            bool isHeading = paragraph.Count == 1
-                && bodyFont > 0
-                && paragraph[0].FontSize >= bodyFont * HeadingSizeRatio
-                && paragraph[0].Words.Count <= 12;
+            var isHeading = paragraph.Count == 1
+                            && bodyFont > 0
+                            && paragraph[0].FontSize >= bodyFont * HeadingSizeRatio
+                            && paragraph[0].Words.Count <= 12;
 
-            string text = JoinWrapped(paragraph);
+            var text = JoinWrapped(paragraph);
             if (sb.Length > 0)
             {
                 sb.Append("\n\n");
@@ -210,7 +210,7 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
             paragraph.Clear();
         }
 
-        for (int i = 0; i < bodyLines.Count; i++)
+        for (var i = 0; i < bodyLines.Count; i++)
         {
             // bodyLines are ordered top-to-bottom, so the gap to the previous line is positive.
             if (i > 0 && bodyLines[i - 1].CenterY - bodyLines[i].CenterY > paragraphGap)
@@ -230,7 +230,7 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
     private static string JoinWrapped(List<Line> lines)
     {
         var sb = new StringBuilder();
-        foreach (Line line in lines)
+        foreach (var line in lines)
         {
             if (sb.Length == 0)
             {
@@ -254,13 +254,13 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
 
     private static double Median(IEnumerable<double> values)
     {
-        List<double> sorted = values.Where(v => v > 0).OrderBy(v => v).ToList();
+        var sorted = values.Where(v => v > 0).OrderBy(v => v).ToList();
         if (sorted.Count == 0)
         {
             return 0;
         }
 
-        int mid = sorted.Count / 2;
+        var mid = sorted.Count / 2;
         return sorted.Count % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2.0 : sorted[mid];
     }
 

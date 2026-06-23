@@ -11,11 +11,11 @@ public static class TestPdf
     public static byte[] Create(params string[] pageTexts)
     {
         var builder = new PdfDocumentBuilder();
-        PdfDocumentBuilder.AddedFont font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
 
-        foreach (string text in pageTexts)
+        foreach (var text in pageTexts)
         {
-            PdfPageBuilder page = builder.AddPage(PageSize.A4);
+            var page = builder.AddPage(PageSize.A4);
             if (!string.IsNullOrWhiteSpace(text))
             {
                 page.AddText(text, 12, new PdfPoint(25, 700), font);
@@ -37,9 +37,9 @@ public static class TestPdf
         params string[] bodyParagraphs)
     {
         var builder = new PdfDocumentBuilder();
-        PdfDocumentBuilder.AddedFont font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
 
-        PdfPageBuilder page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
 
         // Top margin band (>90% of height): running header on the left, page number on the right.
         page.AddText(header, 12, new PdfPoint(25, 800), font);
@@ -50,7 +50,7 @@ public static class TestPdf
         page.AddText(heading, 18, new PdfPoint(25, 740), font);
 
         double y = 705;
-        foreach (string paragraph in bodyParagraphs)
+        foreach (var paragraph in bodyParagraphs)
         {
             page.AddText(paragraph, 12, new PdfPoint(25, y), font);
             y -= 40;

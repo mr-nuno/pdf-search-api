@@ -1,5 +1,4 @@
 using System.Security.Cryptography.X509Certificates;
-using Application.Common.Abstractions;
 using Application.Common.Interfaces;
 using Infrastructure.Persistence;
 using Infrastructure.Pdf;
@@ -16,8 +15,8 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        RavenDbOptions options = configuration.GetSection(RavenDbOptions.SectionName).Get<RavenDbOptions>()
-            ?? throw new InvalidOperationException($"Missing '{RavenDbOptions.SectionName}' configuration section.");
+        var options = configuration.GetSection(RavenDbOptions.SectionName).Get<RavenDbOptions>()
+                      ?? throw new InvalidOperationException($"Missing '{RavenDbOptions.SectionName}' configuration section.");
 
         IDocumentStore store = new DocumentStore
         {

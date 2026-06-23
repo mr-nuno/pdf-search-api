@@ -14,8 +14,8 @@ public sealed class IngestDocumentTests(RavenTestFactory factory) : IClassFixtur
     [Fact]
     public async Task Ingest_Should_Store_Only_NonEmpty_Pages()
     {
-        HttpClient client = factory.CreateClient();
-        byte[] pdf = TestPdf.Create("first page content", "   ", "third page content");
+        var client = factory.CreateClient();
+        var pdf = TestPdf.Create("first page content", "   ", "third page content");
 
         var (status, body) = await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdf, "report.pdf");
 
@@ -30,8 +30,8 @@ public sealed class IngestDocumentTests(RavenTestFactory factory) : IClassFixtur
     [Fact]
     public async Task Ingest_Should_Return_400_When_File_Is_Not_Pdf()
     {
-        HttpClient client = factory.CreateClient();
-        byte[] notPdf = Encoding.UTF8.GetBytes("just some text");
+        var client = factory.CreateClient();
+        var notPdf = Encoding.UTF8.GetBytes("just some text");
 
         var (status, body) = await client.PostPdfAsync<IngestDocumentResponse>("/documents", notPdf, "notes.txt");
 

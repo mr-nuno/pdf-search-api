@@ -1,4 +1,3 @@
-using Application.Common.Abstractions;
 using Application.Common.Interfaces;
 using Ardalis.Result;
 using Domain.Documents;
@@ -20,9 +19,9 @@ public sealed record IngestDocumentCommand(Stream Content, string FileName)
 
         public async Task<Result<IngestDocumentResponse>> Handle(IngestDocumentCommand request, CancellationToken ct)
         {
-            int pagesIngested = 0;
+            var pagesIngested = 0;
 
-            foreach (PdfPageText page in extractor.Extract(request.Content))
+            foreach (var page in extractor.Extract(request.Content))
             {
                 var documentPage = new DocumentPage
                 {
