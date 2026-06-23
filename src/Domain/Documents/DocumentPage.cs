@@ -27,5 +27,5 @@ public sealed class DocumentPage
 
     public DateTimeOffset IngestedAt { get; set; }
 
-    public List<string> Tags { get; set; } = [DefaultTag];
+    public List<string> Tags { get; set; } = [];
 }
