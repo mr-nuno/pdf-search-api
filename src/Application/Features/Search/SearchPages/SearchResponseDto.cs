@@ -6,6 +6,7 @@ public sealed record SearchResultDto(
     string? Header,
     string? PageLabel,
     string Content,
+    string Tag,
     double SearchScore);
 
 public sealed record SearchResponseDto(

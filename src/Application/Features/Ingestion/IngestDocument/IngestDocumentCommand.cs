@@ -7,7 +7,7 @@ using Serilog;
 
 namespace Application.Features.Ingestion.IngestDocument;
 
-public sealed record IngestDocumentCommand(Stream Content, string FileName)
+public sealed record IngestDocumentCommand(Stream Content, string FileName, string? Tag)
     : IRequest<Result<IngestDocumentResponse>>
 {
     public sealed class Handler(
@@ -21,6 +21,8 @@ public sealed record IngestDocumentCommand(Stream Content, string FileName)
         {
             var pagesIngested = 0;
 
+            var tag = string.IsNullOrWhiteSpace(request.Tag) ? DocumentPage.DefaultTag : request.Tag;
+
             foreach (var page in extractor.Extract(request.Content))
             {
                 var documentPage = new DocumentPage
@@ -30,7 +32,8 @@ public sealed record IngestDocumentCommand(Stream Content, string FileName)
                     Header = page.Header,
                     PageLabel = page.PageLabel,
                     Content = page.Content,
-                    IngestedAt = dateTime.UtcNow
+                    IngestedAt = dateTime.UtcNow,
+                    Tag = tag
                 };
 
                 await db.StoreAsync(documentPage, ct);

@@ -109,4 +109,38 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
         body.ValidationErrors.ShouldNotBeNull();
         body.ValidationErrors!.ShouldContain(e => e.Property.Equals("query", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public async Task Search_Should_Filter_By_Tag_When_Tag_Is_Provided()
+    {
+        var client = factory.CreateClient();
+
+        const string token = "taggable";
+        var pdf1 = TestPdf.Create("page", $"this contains {token} but with hr tag");
+        var pdf2 = TestPdf.Create("page", $"this contains {token} but with finance tag");
+
+        var ingest1 = await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdf1, "hr.pdf", tag: "hr");
+        ingest1.Status.ShouldBe(HttpStatusCode.Created);
+
+        var ingest2 = await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdf2, "finance.pdf", tag: "finance");
+        ingest2.Status.ShouldBe(HttpStatusCode.Created);
+
+        factory.WaitForIndexing();
+
+        // Search with finance tag
+        var (status, body) = await client.GetApiAsync<SearchResponseDto>($"/search?query={token}&tag=finance");
+
+        status.ShouldBe(HttpStatusCode.OK);
+        body!.Data!.TotalHits.ShouldBe(1);
+        var hit = body.Data.Results.ShouldHaveSingleItem();
+        hit.SourceFileName.ShouldBe("finance.pdf");
+        hit.Tag.ShouldBe("finance");
+
+        // Search across all tags (tag omitted)
+        var (statusAll, bodyAll) = await client.GetApiAsync<SearchResponseDto>($"/search?query={token}");
+        statusAll.ShouldBe(HttpStatusCode.OK);
+        bodyAll!.Data!.TotalHits.ShouldBeGreaterThanOrEqualTo(2);
+        bodyAll.Data.Results.ShouldContain(r => r.SourceFileName == "hr.pdf");
+        bodyAll.Data.Results.ShouldContain(r => r.SourceFileName == "finance.pdf");
+    }
 }
