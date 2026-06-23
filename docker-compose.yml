@@ -7,8 +7,10 @@ services:
     ports:
       - "5000:8080"
     depends_on:
-      - ravendb
-      - seq
+      ravendb:
+        condition: service_healthy
+      seq:
+        condition: service_started
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_HTTP_PORTS=8080
@@ -27,6 +29,12 @@ services:
       - RAVEN_Security_UnsecuredAccessAllowed=PrivateNetwork
     volumes:
       - ravendb-data:/var/lib/ravendb/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/setup/alive"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   seq:
     image: datalust/seq:latest

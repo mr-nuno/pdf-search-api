@@ -8,7 +8,7 @@ namespace Api.Endpoints.Search;
 
 /// <summary>GET /search?query= — full-text search across ingested PDF pages.</summary>
 public sealed class SearchPagesEndpoint(ISender sender)
-    : EndpointWithoutRequest<ApiResponse<SearchResponseDto>>
+    : Endpoint<SearchPagesRequest, ApiResponse<SearchResponseDto>>
 {
     public override void Configure()
     {
@@ -26,11 +26,9 @@ public sealed class SearchPagesEndpoint(ISender sender)
         });
     }
 
-    public override async Task HandleAsync(CancellationToken ct)
+    public override async Task HandleAsync(SearchPagesRequest req, CancellationToken ct)
     {
-        string query = Query<string>("query", isRequired: false) ?? string.Empty;
-
-        var result = await sender.Send(new SearchPagesQuery(query), ct);
+        var result = await sender.Send(new SearchPagesQuery(req.Query ?? string.Empty), ct);
         await Send.ResponseAsync(result.ToApiResponse(), result.ToHttpStatusCode(), ct);
     }
 }
