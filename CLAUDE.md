@@ -25,6 +25,20 @@ EF/SQL-specific conventions are superseded by the rules below.
   shapes stored data (id/identity separators, collection naming). Production DI **and** the
   integration-test store call it — never re-derive naming/id rules in tests.
 
+## Connecting to a TLS RavenDB endpoint (required for https stores)
+- Against a TLS endpoint (mkcert-fronted `ravendb.pew.local`, RavenDB Cloud) `SocketsHttpHandler`
+  transparently retries a request on a fresh connection and re-serializes the body; RavenDB's
+  single-use `BlittableJsonContent` then throws `"Already called previously, or called after
+  EnsureCompletedAsync"`. `RavenConventions.Apply` wraps the client with
+  `BufferedRequestContentHandler` (buffers materialized JSON into re-readable `ByteArrayContent`)
+  via `store.Conventions.CreateHttpClient` to make the retry safe. **Do not remove this** when
+  pointing the store at any https URL.
+- A **secured** cluster authenticates with an X.509 client cert: `RavenDbOptions.CertificatePath`
+  (+ `CertificatePassword`) is loaded in `DependencyInjection` and set on the store before
+  `Initialize()`. Leave both blank for an unsecured store — including the TLS-fronted-but-open
+  `ravendb.pew.local`, which needs **no** client cert (the mkcert root is trusted by the OS, so
+  .NET validates the server cert with no extra config).
+
 ## Documents & indexes (replaces EF entities/migrations/configs)
 - Stored documents (e.g. `DocumentPage`) live in `Domain/Documents/` as **plain POCOs with public
   setters** (Raven deserialization; read-mostly stored data). **No** `AuditableEntity`,
@@ -43,7 +57,8 @@ EF/SQL-specific conventions are superseded by the rules below.
 
 ## Config
 - **No** `ConnectionStrings:DefaultConnection`. RavenDB config lives under a `RavenDb` section:
-  `Urls` (string[]) + `Database`. Serilog config is unchanged from global.
+  `Urls` (string[]) + `Database`, plus optional `CertificatePath` / `CertificatePassword` for a
+  secured (https) cluster. Serilog config is unchanged from global.
 
 ## Testing
 - Integration tests use **`RavenDB.TestDriver`** (a real test-mode Raven server) — **not**
