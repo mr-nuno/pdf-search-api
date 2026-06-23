@@ -3,6 +3,8 @@ namespace Application.Features.Search.SearchPages;
 public sealed record SearchResultDto(
     string SourceFileName,
     int PageNumber,
+    string? Header,
+    string? PageLabel,
     string Content,
     double SearchScore);
 

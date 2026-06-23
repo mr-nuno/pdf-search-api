@@ -15,12 +15,16 @@ public sealed class DocumentPages_Search : AbstractIndexCreationTask<DocumentPag
                        select new
                        {
                            page.Content,
+                           page.Header,
                            page.SourceFileName
                        };
 
-        // Analyze Content with Lucene's standard analyzer for stemming/casing-insensitive matching.
+        // Analyze Content and Header with Lucene's standard analyzer for stemming/casing-insensitive
+        // matching. Header is indexed so chapter-title text (split out of Content) stays searchable.
         Index(x => x.Content, FieldIndexing.Search);
         Analyze(x => x.Content, "StandardAnalyzer");
+        Index(x => x.Header, FieldIndexing.Search);
+        Analyze(x => x.Header, "StandardAnalyzer");
 
         // Use the Lucene engine so relevance scores are exposed via document metadata
         // (@index-score). The default Corax engine does not populate it.

@@ -9,9 +9,10 @@ search hits can be targeted precisely to a source file and page number.
 ## Features
 
 - **Granular ingestion** — PDFs are split per page; each non-empty page becomes its own searchable document.
-- **Full-text search** — backed by RavenDB's `DocumentPages/Search` index using Lucene's `StandardAnalyzer` (stemming, case-insensitive matching).
+- **Layout-aware extraction** — text is reconstructed from word positions (not the raw glyph stream), so running headers and printed page numbers are split into their own fields and the body is rendered as **markdown** (line/paragraph breaks preserved, enlarged lines promoted to headings) for clean display by consumers.
+- **Full-text search** — backed by RavenDB's `DocumentPages/Search` index using Lucene's `StandardAnalyzer` (stemming, case-insensitive matching). Both body `Content` and the running `Header` are indexed, so chapter-title queries still match.
 - **Relevance scoring** — every hit carries its `@index-score` (Lucene engine), exposed as `SearchScore`.
-- **Result completeness** — results return the matched content, source file name, and page number.
+- **Result completeness** — results return the markdown body content, running header, page label, source file name, and page number.
 - **Consistent envelope** — every endpoint returns `ApiResponse<T>`, never a raw DTO.
 - **Production-ready scaffolding** — Serilog (Console + Seq), health probes, Scalar/OpenAPI, global exception handling, Entra-ID JWT auth scaffold.
 
@@ -63,7 +64,9 @@ POST /documents
 Content-Type: multipart/form-data
 ```
 
-Field `File` — the PDF to ingest. Text is extracted page-by-page; whitespace-only pages are skipped.
+Field `File` — the PDF to ingest. Text is extracted page-by-page using layout analysis: line and
+paragraph breaks are preserved, the running header and printed page number are separated from the
+body, and the body is stored as markdown. Whitespace-only pages are skipped.
 
 ```bash
 curl -F "File=@sample.pdf" http://localhost:5041/documents
@@ -100,7 +103,9 @@ curl "http://localhost:5041/search?query=invoice"
       {
         "sourceFileName": "sample.pdf",
         "pageNumber": 4,
-        "content": "…matched page text…",
+        "header": "KAPITEL 8 – ÄVENTYR",
+        "pageLabel": "108",
+        "content": "## Fällor\n\n…matched body text…",
         "searchScore": 1.87
       }
     ]

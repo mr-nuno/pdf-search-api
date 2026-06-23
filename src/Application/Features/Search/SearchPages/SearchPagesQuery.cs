@@ -23,6 +23,7 @@ public sealed record SearchPagesQuery(string Query) : IRequest<Result<SearchResp
             List<DocumentPage> pages = await db.DocumentPages
                 .Statistics(out QueryStatistics stats)
                 .Search(x => x.Content, request.Query)
+                .Search(x => x.Header, request.Query)
                 .Take(MaxResults)
                 .ToListAsync(ct);
 
@@ -30,6 +31,8 @@ public sealed record SearchPagesQuery(string Query) : IRequest<Result<SearchResp
                 .Select(page => new SearchResultDto(
                     page.SourceFileName,
                     page.PageNumber,
+                    page.Header,
+                    page.PageLabel,
                     page.Content,
                     db.IndexScore(page)))
                 .ToList();

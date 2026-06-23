@@ -41,6 +41,62 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
     }
 
     [Fact]
+    public async Task Search_Should_Separate_Header_PageNumber_And_Markdown_Body()
+    {
+        HttpClient client = factory.CreateClient();
+
+        const string bodyToken = "grimwackle";
+        byte[] pdf = TestPdf.CreateStructuredPage(
+            header: "CHAPTER 8 ADVENTURES",
+            pageNumber: "108",
+            heading: "Traps",
+            $"The {bodyToken} lurks in the corridor.");
+        var ingest = await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdf, "book.pdf");
+        ingest.Status.ShouldBe(HttpStatusCode.Created);
+
+        factory.WaitForIndexing();
+
+        var (status, body) = await client.GetApiAsync<SearchResponseDto>($"/search?query={bodyToken}");
+
+        status.ShouldBe(HttpStatusCode.OK);
+        SearchResultDto hit = body!.Data!.Results.ShouldHaveSingleItem();
+
+        // Running header and page number are split into their own fields...
+        hit.Header.ShouldBe("CHAPTER 8 ADVENTURES"); // the embedded "8" is kept, only "108" is taken
+        hit.PageLabel.ShouldBe("108");
+
+        // ...and the body is clean markdown: heading promoted, no header/page-number noise.
+        hit.Content.ShouldContain(bodyToken);
+        hit.Content.ShouldContain("## Traps");
+        hit.Content.ShouldNotContain("CHAPTER");
+        hit.Content.ShouldNotContain("108");
+    }
+
+    [Fact]
+    public async Task Search_Should_Match_Text_In_The_Header()
+    {
+        HttpClient client = factory.CreateClient();
+
+        const string headerToken = "snargleby";
+        byte[] pdf = TestPdf.CreateStructuredPage(
+            header: $"CHAPTER {headerToken}",
+            pageNumber: "12",
+            heading: "Intro",
+            "An unrelated body sentence.");
+        var ingest = await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdf, "headers.pdf");
+        ingest.Status.ShouldBe(HttpStatusCode.Created);
+
+        factory.WaitForIndexing();
+
+        var (status, body) = await client.GetApiAsync<SearchResponseDto>($"/search?query={headerToken}");
+
+        status.ShouldBe(HttpStatusCode.OK);
+        body!.Data!.TotalHits.ShouldBeGreaterThanOrEqualTo(1);
+        body.Data.Results.ShouldContain(r =>
+            r.SourceFileName == "headers.pdf" && r.Header != null && r.Header.Contains(headerToken, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Search_Should_Return_400_When_Query_Is_Empty()
     {
         HttpClient client = factory.CreateClient();
