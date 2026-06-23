@@ -21,7 +21,7 @@ public sealed class SearchPagesEndpoint(ISender sender)
             s.Description = "Searches page content via the DocumentPages/Search index and returns matched "
                 + "pages with their source file name, page number, and relevance score.";
             s.Params["query"] = "The full-text search term (required).";
-            s.Params["tag"] = "An optional tag to filter the search results.";
+            s.Params["tags"] = "Optional tags to filter the search results (repeat the param for multiple tags).";
             s.Response<ApiResponse<SearchResponseDto>>(200, "Search completed");
             s.Response<ApiResponse<SearchResponseDto>>(400, "Query was missing or empty");
         });
@@ -29,7 +29,7 @@ public sealed class SearchPagesEndpoint(ISender sender)
 
     public override async Task HandleAsync(SearchPagesRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new SearchPagesQuery(req.Query ?? string.Empty, req.Tag), ct);
+        var result = await sender.Send(new SearchPagesQuery(req.Query ?? string.Empty, req.Tags), ct);
         await Send.ResponseAsync(result.ToApiResponse(), result.ToHttpStatusCode(), ct);
     }
 }

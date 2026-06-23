@@ -17,7 +17,7 @@ public sealed class DocumentPages_Search : AbstractIndexCreationTask<DocumentPag
                            page.Content,
                            page.Header,
                            page.SourceFileName,
-                           page.Tag
+                           page.Tags
                        };
 
         // Analyze Content and Header with Lucene's standard analyzer for stemming/casing-insensitive

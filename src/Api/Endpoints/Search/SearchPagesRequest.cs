@@ -8,6 +8,6 @@ public sealed class SearchPagesRequest
     [QueryParam, BindFrom("query")]
     public string? Query { get; set; }
 
-    [QueryParam, BindFrom("tag")]
-    public string? Tag { get; set; }
+    [QueryParam, BindFrom("tags")]
+    public List<string>? Tags { get; set; }
 }
