@@ -23,7 +23,34 @@ public static class HttpClientExtensions
     public static async Task<(System.Net.HttpStatusCode Status, ApiResponse<T>? Body)> PostPdfAsync<T>(
         this HttpClient client, string url, byte[] pdf, string fileName, IEnumerable<string>? tags = null, CancellationToken ct = default)
     {
-        using var form = new MultipartFormDataContent();
+        using var form = BuildPdfForm(pdf, fileName, tags);
+        var response = await client.PostAsync(url, form, ct);
+        var content = await response.Content.ReadAsStringAsync(ct);
+        return (response.StatusCode, JsonSerializer.Deserialize<ApiResponse<T>>(content, JsonOptions));
+    }
+
+    /// <summary>Uploads a PDF as multipart/form-data via PUT.</summary>
+    public static async Task<(System.Net.HttpStatusCode Status, ApiResponse<T>? Body)> PutPdfAsync<T>(
+        this HttpClient client, string url, byte[] pdf, string fileName, IEnumerable<string>? tags = null, CancellationToken ct = default)
+    {
+        using var form = BuildPdfForm(pdf, fileName, tags);
+        var response = await client.PutAsync(url, form, ct);
+        var content = await response.Content.ReadAsStringAsync(ct);
+        return (response.StatusCode, JsonSerializer.Deserialize<ApiResponse<T>>(content, JsonOptions));
+    }
+
+    /// <summary>Sends a DELETE request and deserializes the response envelope.</summary>
+    public static async Task<(System.Net.HttpStatusCode Status, ApiResponse<T>? Body)> DeleteApiAsync<T>(
+        this HttpClient client, string url, CancellationToken ct = default)
+    {
+        var response = await client.DeleteAsync(url, ct);
+        var content = await response.Content.ReadAsStringAsync(ct);
+        return (response.StatusCode, JsonSerializer.Deserialize<ApiResponse<T>>(content, JsonOptions));
+    }
+
+    private static MultipartFormDataContent BuildPdfForm(byte[] pdf, string fileName, IEnumerable<string>? tags)
+    {
+        var form = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(pdf);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(fileContent, "File", fileName);
@@ -31,8 +58,6 @@ public static class HttpClientExtensions
         foreach (var tag in tags ?? [])
             form.Add(new StringContent(tag), "tags");
 
-        var response = await client.PostAsync(url, form, ct);
-        var content = await response.Content.ReadAsStringAsync(ct);
-        return (response.StatusCode, JsonSerializer.Deserialize<ApiResponse<T>>(content, JsonOptions));
+        return form;
     }
 }

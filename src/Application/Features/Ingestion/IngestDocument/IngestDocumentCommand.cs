@@ -3,11 +3,12 @@ using Ardalis.Result;
 using Domain.Documents;
 using FluentValidation;
 using MediatR;
+using Raven.Client.Documents;
 using Serilog;
 
 namespace Application.Features.Ingestion.IngestDocument;
 
-public sealed record IngestDocumentCommand(Stream Content, string FileName, List<string>? Tags)
+public sealed record IngestDocumentCommand(Stream Content, string FileName, List<string>? Tags, bool Replace = false)
     : IRequest<Result<IngestDocumentResponse>>
 {
     public sealed class Handler(
@@ -19,6 +20,17 @@ public sealed record IngestDocumentCommand(Stream Content, string FileName, List
 
         public async Task<Result<IngestDocumentResponse>> Handle(IngestDocumentCommand request, CancellationToken ct)
         {
+            if (request.Replace)
+            {
+                var existing = await db.DocumentPages
+                    .Where(x => x.SourceFileName == request.FileName)
+                    .Take(4096)
+                    .ToListAsync(ct);
+
+                foreach (var page in existing)
+                    db.Delete(page);
+            }
+
             var pagesIngested = 0;
 
             var tags = request.Tags is { Count: > 0 }

@@ -19,6 +19,8 @@ public sealed class RavenContext(IAsyncDocumentSession session) : IApplicationDb
     public Task StoreAsync(DocumentPage page, CancellationToken ct = default) =>
         session.StoreAsync(page, ct);
 
+    public void Delete(DocumentPage page) => session.Delete(page);
+
     public Task SaveChangesAsync(CancellationToken ct = default) =>
         session.SaveChangesAsync(ct);
 
