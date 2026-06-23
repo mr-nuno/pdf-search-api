@@ -1,0 +1,37 @@
+name: Auto PR
+
+# Opens a PR into main the first time a feature branch is pushed.
+# Idempotent: if an open PR for the branch already exists, it does nothing
+# (later pushes update that PR automatically).
+
+on:
+  push:
+    branches-ignore:
+      - main
+    tags-ignore:
+      - '**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    name: Open PR to main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create pull request if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          existing=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq 'length')
+          if [ "$existing" -gt 0 ]; then
+            echo "An open PR for $BRANCH already exists — nothing to do."
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "$BRANCH" \
+              --body "Automated PR opened on first push of \`$BRANCH\`."
+          fi

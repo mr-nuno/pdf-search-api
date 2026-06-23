@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ '**' ]   # run build+test on every branch push so PRs show status checks
     tags: [ '*.*.*' ]
   pull_request:
     branches: [ main ]
