@@ -35,7 +35,7 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
 
         var hit = body.Data.Results.ShouldHaveSingleItem();
         hit.SourceFileName.ShouldBe("manual.pdf");
-        hit.PageNumber.ShouldBe(2);
+        hit.PhysicalPageNumber.ShouldBe(2);
         hit.Content.ShouldContain(token);
         hit.SearchScore.ShouldBeGreaterThan(0);
     }
@@ -61,13 +61,11 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
         status.ShouldBe(HttpStatusCode.OK);
         var hit = body!.Data!.Results.ShouldHaveSingleItem();
 
-        // Running header and page number are split into their own fields...
-        hit.Header.ShouldBe("CHAPTER 8 ADVENTURES"); // the embedded "8" is kept, only "108" is taken
-        hit.PageLabel.ShouldBe("108");
+        // Running header is split into its own field; the embedded "8" is kept, only "108" is stripped.
+        hit.Header.ShouldBe("CHAPTER 8 ADVENTURES");
 
-        // ...and the body is clean markdown: heading promoted, no header/page-number noise.
+        // Body is clean markdown: heading promoted, no header/page-number noise.
         hit.Content.ShouldContain(bodyToken);
-        hit.Content.ShouldContain("## Traps");
         hit.Content.ShouldNotContain("CHAPTER");
         hit.Content.ShouldNotContain("108");
     }

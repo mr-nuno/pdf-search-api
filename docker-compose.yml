@@ -19,7 +19,7 @@ services:
       - Serilog__WriteTo__1__Args__serverUrl=http://seq:5341
 
   ravendb:
-    image: ravendb/ravendb:latest
+    image: docker.io/ravendb/ravendb:latest
     ports:
       - "8080:8080"   # RavenDB Studio + client API
       - "38888:38888" # cluster/tcp
@@ -37,7 +37,7 @@ services:
       start_period: 10s
 
   seq:
-    image: datalust/seq:latest
+    image: docker.io/datalust/seq:latest
     ports:
       - "5341:5341"
       - "8081:80"

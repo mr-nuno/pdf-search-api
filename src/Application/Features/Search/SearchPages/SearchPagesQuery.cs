@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Application.Common.Interfaces;
 using Ardalis.Result;
 using Domain.Documents;
@@ -35,18 +36,53 @@ public sealed record SearchPagesQuery(string Query, string? Tag) : IRequest<Resu
                 .ToListAsync(ct);
 
             var results = pages
-                .Select(page => new SearchResultDto(
-                    page.SourceFileName,
-                    page.PageNumber,
-                    page.Header,
-                    page.PageLabel,
-                    page.Content,
-                    page.Tag,
-                    db.IndexScore(page)))
+                .Select(page =>
+                {
+                    var content = BoldMatches(TrimToFirstMatch(page.Content, request.Query), request.Query);
+                    return new SearchResultDto(
+                        page.SourceFileName,
+                        page.PageNumber,
+                        page.Header,
+                        content,
+                        page.Tag,
+                        db.IndexScore(page));
+                })
                 .ToList();
 
             Log.Information("Search for {Query} matched {TotalHits} page(s)", request.Query, stats.TotalResults);
             return Result.Success(new SearchResponseDto(request.Query, (int)stats.TotalResults, results));
+        }
+
+        private static string TrimToFirstMatch(string content, string query)
+        {
+            var firstIdx = query
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Select(t => content.IndexOf(t, StringComparison.OrdinalIgnoreCase))
+                .Where(i => i >= 0)
+                .Append(int.MaxValue)
+                .Min();
+
+            if (firstIdx == int.MaxValue)
+                return content;
+
+            for (var i = firstIdx - 1; i >= 1; i--)
+            {
+                if (content[i] == '\n' && content[i - 1] == '\n')
+                    return content[(i + 1)..];
+
+                if ((content[i] == ' ' || content[i] == '\n') &&
+                    (content[i - 1] == '.' || content[i - 1] == '!' || content[i - 1] == '?'))
+                    return content[(i + 1)..];
+            }
+
+            return content;
+        }
+
+        private static string BoldMatches(string content, string query)
+        {
+            foreach (var token in query.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                content = Regex.Replace(content, Regex.Escape(token), m => $"**{m.Value}**", RegexOptions.IgnoreCase);
+            return content;
         }
     }
 

@@ -59,7 +59,6 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
 
         var headerLines = new List<string>();
         var bodyLines = new List<Line>();
-        string? pageLabel = null;
 
         foreach (var line in lines)
         {
@@ -68,9 +67,9 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
 
             if (inHeaderBand || inFooterBand)
             {
-                // A numeric-only token in a margin band is the printed page number; whatever
-                // header text remains stays as the running header (footer prose is dropped).
-                var remainder = TakePageLabel(line, ref pageLabel);
+                // Strip any numeric-only corner token (the printed page number) so it does not
+                // bleed into the running header. Footer prose is dropped entirely.
+                var remainder = StripCornerNumeral(line);
                 if (remainder.Length > 0 && inHeaderBand)
                 {
                     headerLines.Add(remainder);
@@ -90,7 +89,7 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
             return null;
         }
 
-        return new PdfPageText(page.Number, content, header, pageLabel);
+        return new PdfPageText(page.Number, content, header);
     }
 
     /// <summary>Clusters words whose vertical centres are close into single visual lines,
@@ -133,42 +132,22 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
         return lines;
     }
 
-    /// <summary>Pulls a page number out of a margin line into <paramref name="pageLabel"/> and returns
-    /// the remaining text. Only the line's extreme tokens (the corners, where page numbers sit) are
-    /// considered, so a numeral embedded between header words (e.g. the "8" in "KAPITEL 8") is kept.</summary>
-    private static string TakePageLabel(Line line, ref string? pageLabel)
+    /// <summary>Strips a numeric-only corner token (printed page number) from a margin line and
+    /// returns the remaining text. Only the first and last token are candidates, so a numeral
+    /// embedded between header words (e.g. the "8" in "KAPITEL 8") is preserved.</summary>
+    private static string StripCornerNumeral(Line line)
     {
         var words = line.Words;
+        var stripIndex = -1;
 
-        // Only the first and last token of the line are page-number candidates (the corners).
-        var labelIndex = -1;
-        if (pageLabel is null)
-        {
-            if (NumericOnly().IsMatch(words[0].Text.Trim()))
-            {
-                labelIndex = 0;
-            }
-            else if (words.Count > 1 && NumericOnly().IsMatch(words[^1].Text.Trim()))
-            {
-                labelIndex = words.Count - 1;
-            }
+        if (NumericOnly().IsMatch(words[0].Text.Trim()))
+            stripIndex = 0;
+        else if (words.Count > 1 && NumericOnly().IsMatch(words[^1].Text.Trim()))
+            stripIndex = words.Count - 1;
 
-            if (labelIndex >= 0)
-            {
-                pageLabel = words[labelIndex].Text.Trim();
-            }
-        }
-
-        var kept = new List<string>();
-        for (var i = 0; i < words.Count; i++)
-        {
-            if (i != labelIndex)
-            {
-                kept.Add(words[i].Text);
-            }
-        }
-
-        return string.Join(" ", kept).Trim();
+        return string.Join(" ", words
+            .Where((_, i) => i != stripIndex)
+            .Select(w => w.Text)).Trim();
     }
 
     /// <summary>Renders body lines as markdown: lines are grouped into paragraphs on vertical gaps,
