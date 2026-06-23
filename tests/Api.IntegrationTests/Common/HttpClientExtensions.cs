@@ -14,8 +14,8 @@ public static class HttpClientExtensions
     public static async Task<(System.Net.HttpStatusCode Status, ApiResponse<T>? Body)> GetApiAsync<T>(
         this HttpClient client, string url, CancellationToken ct = default)
     {
-        HttpResponseMessage response = await client.GetAsync(url, ct);
-        string content = await response.Content.ReadAsStringAsync(ct);
+        var response = await client.GetAsync(url, ct);
+        var content = await response.Content.ReadAsStringAsync(ct);
         return (response.StatusCode, JsonSerializer.Deserialize<ApiResponse<T>>(content, JsonOptions));
     }
 
@@ -28,8 +28,8 @@ public static class HttpClientExtensions
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(fileContent, "File", fileName);
 
-        HttpResponseMessage response = await client.PostAsync(url, form, ct);
-        string content = await response.Content.ReadAsStringAsync(ct);
+        var response = await client.PostAsync(url, form, ct);
+        var content = await response.Content.ReadAsStringAsync(ct);
         return (response.StatusCode, JsonSerializer.Deserialize<ApiResponse<T>>(content, JsonOptions));
     }
 }

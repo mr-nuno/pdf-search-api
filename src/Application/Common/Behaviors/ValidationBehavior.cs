@@ -41,7 +41,7 @@ public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidat
             })
             .ToList();
 
-        if (TryBuildInvalidResult(errors, out TResponse? response))
+        if (TryBuildInvalidResult(errors, out var response))
         {
             return response!;
         }
@@ -51,7 +51,7 @@ public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidat
 
     private static bool TryBuildInvalidResult(List<ValidationError> errors, out TResponse? response)
     {
-        Type responseType = typeof(TResponse);
+        var responseType = typeof(TResponse);
 
         if (responseType.IsGenericType && responseType.GetGenericTypeDefinition() == typeof(Result<>))
         {

@@ -1,4 +1,4 @@
-namespace Application.Common.Abstractions;
+namespace Application.Common.Interfaces;
 
 /// <summary>Layout-aware text extracted from a single PDF page.</summary>
 /// <param name="PageNumber">The 1-based physical page index within the source PDF.</param>

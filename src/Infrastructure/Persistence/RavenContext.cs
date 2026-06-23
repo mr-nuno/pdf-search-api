@@ -24,7 +24,7 @@ public sealed class RavenContext(IAsyncDocumentSession session) : IApplicationDb
 
     public double IndexScore<T>(T entity) where T : class
     {
-        IMetadataDictionary metadata = session.Advanced.GetMetadataFor(entity);
+        var metadata = session.Advanced.GetMetadataFor(entity);
         return metadata.TryGetValue(Constants.Documents.Metadata.IndexScore, out object? value) && value is not null
             ? Convert.ToDouble(value)
             : 0d;

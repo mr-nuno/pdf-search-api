@@ -15,11 +15,11 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
     [Fact]
     public async Task Search_Should_Return_Matching_Page_With_Metadata_And_Score()
     {
-        HttpClient client = factory.CreateClient();
+        var client = factory.CreateClient();
 
         // Unique token avoids collisions with other tests sharing the database.
         const string token = "zentilworp";
-        byte[] pdf = TestPdf.Create($"intro page", $"the {token} appears on page two");
+        var pdf = TestPdf.Create($"intro page", $"the {token} appears on page two");
         var ingest = await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdf, "manual.pdf");
         ingest.Status.ShouldBe(HttpStatusCode.Created);
 
@@ -33,7 +33,7 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
         body.Data.ShouldNotBeNull();
         body.Data!.TotalHits.ShouldBeGreaterThanOrEqualTo(1);
 
-        SearchResultDto hit = body.Data.Results.ShouldHaveSingleItem();
+        var hit = body.Data.Results.ShouldHaveSingleItem();
         hit.SourceFileName.ShouldBe("manual.pdf");
         hit.PageNumber.ShouldBe(2);
         hit.Content.ShouldContain(token);
@@ -43,10 +43,10 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
     [Fact]
     public async Task Search_Should_Separate_Header_PageNumber_And_Markdown_Body()
     {
-        HttpClient client = factory.CreateClient();
+        var client = factory.CreateClient();
 
         const string bodyToken = "grimwackle";
-        byte[] pdf = TestPdf.CreateStructuredPage(
+        var pdf = TestPdf.CreateStructuredPage(
             header: "CHAPTER 8 ADVENTURES",
             pageNumber: "108",
             heading: "Traps",
@@ -59,7 +59,7 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
         var (status, body) = await client.GetApiAsync<SearchResponseDto>($"/search?query={bodyToken}");
 
         status.ShouldBe(HttpStatusCode.OK);
-        SearchResultDto hit = body!.Data!.Results.ShouldHaveSingleItem();
+        var hit = body!.Data!.Results.ShouldHaveSingleItem();
 
         // Running header and page number are split into their own fields...
         hit.Header.ShouldBe("CHAPTER 8 ADVENTURES"); // the embedded "8" is kept, only "108" is taken
@@ -75,10 +75,10 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
     [Fact]
     public async Task Search_Should_Match_Text_In_The_Header()
     {
-        HttpClient client = factory.CreateClient();
+        var client = factory.CreateClient();
 
         const string headerToken = "snargleby";
-        byte[] pdf = TestPdf.CreateStructuredPage(
+        var pdf = TestPdf.CreateStructuredPage(
             header: $"CHAPTER {headerToken}",
             pageNumber: "12",
             heading: "Intro",
@@ -99,7 +99,7 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
     [Fact]
     public async Task Search_Should_Return_400_When_Query_Is_Empty()
     {
-        HttpClient client = factory.CreateClient();
+        var client = factory.CreateClient();
 
         var (status, body) = await client.GetApiAsync<SearchResponseDto>("/search?query=");
 

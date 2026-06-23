@@ -52,7 +52,7 @@ var healthOptions = new HealthCheckOptions
     ResponseWriter = async (context, report) =>
     {
         context.Response.ContentType = "application/json";
-        string version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.0";
+        var version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.0";
         var response = new { status = report.Status.ToString(), version };
         await JsonSerializer.SerializeAsync(context.Response.Body, response, cancellationToken: context.RequestAborted);
     }
