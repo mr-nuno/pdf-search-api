@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel superseded runs for the same ref (each tag ref is unique, so releases aren't cancelled).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
     name: Build & Test
