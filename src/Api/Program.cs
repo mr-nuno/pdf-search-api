@@ -63,10 +63,10 @@ app.MapHealthChecks("/health/ready", healthOptions).AllowAnonymous();
 // Development only — OpenAPI document + Scalar UI.
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwaggerGen();
+    app.UseSwaggerGen(s => s.Path = "/openapi/{documentName}.json");
     app.MapScalarApiReference(options =>
     {
-        options.OpenApiRoutePattern = "/swagger/{documentName}/swagger.json";
+        options.OpenApiRoutePattern = "/openapi/{documentName}.json";
     });
 }
 

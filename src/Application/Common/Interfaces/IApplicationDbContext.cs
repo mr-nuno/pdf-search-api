@@ -19,6 +19,9 @@ public interface IApplicationDbContext
     /// <summary>Stages a document for insertion in the current unit of work.</summary>
     Task StoreAsync(DocumentPage page, CancellationToken ct = default);
 
+    /// <summary>Marks a document for deletion in the current unit of work. Actual deletion is applied on <see cref="SaveChangesAsync"/>.</summary>
+    void Delete(DocumentPage page);
+
     /// <summary>Commits all staged changes in the current unit of work.</summary>
     Task SaveChangesAsync(CancellationToken ct = default);
 
