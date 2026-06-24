@@ -6,6 +6,7 @@ using Api.IntegrationTests.Common;
 using Application.Features.Ingestion.IngestDocument;
 using Application.Features.Search.SearchPages;
 using Shouldly;
+using Tests.Common;
 using Xunit;
 
 namespace Api.IntegrationTests.Features;

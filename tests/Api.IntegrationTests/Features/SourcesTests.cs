@@ -5,6 +5,7 @@ using Application.Features.Ingestion.IngestDocument;
 using Application.Features.Sources.DeleteSource;
 using Application.Features.Sources.GetSources;
 using Shouldly;
+using Tests.Common;
 using Xunit;
 
 namespace Api.IntegrationTests.Features;

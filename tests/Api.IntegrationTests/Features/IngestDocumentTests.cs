@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Api.IntegrationTests.Common;
 using Application.Features.Ingestion.IngestDocument;
 using Shouldly;
+using Tests.Common;
 using Xunit;
 
 namespace Api.IntegrationTests.Features;
