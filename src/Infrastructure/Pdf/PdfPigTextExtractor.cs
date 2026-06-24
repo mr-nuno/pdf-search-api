@@ -389,14 +389,43 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
     private static Line MakeLine(IReadOnlyList<Word> words, LineRegion region)
     {
         var sorted = words.OrderBy(w => w.BoundingBox.Left).ToList();
+        var letters = sorted.SelectMany(w => w.Letters).ToList();
         return new Line(
             Text: string.Join(" ", sorted.Select(w => w.Text)),
             CenterY: sorted.Average(w => CenterY(w.BoundingBox)),
             Height: Median(sorted.Select(w => w.BoundingBox.Height)),
-            FontSize: Median(sorted.SelectMany(w => w.Letters).Select(l => l.PointSize)),
+            FontSize: Median(letters.Select(l => l.PointSize)),
+            Bold: IsBold(letters),
             Region: region,
             Words: sorted);
     }
+
+    /// <summary>True if most of the line is set in a bold/black/heavy face — a font-weight signal
+    /// that a short line is a heading even when it is not set in a larger size.</summary>
+    private static bool IsBold(IReadOnlyList<Letter> letters)
+    {
+        if (letters.Count == 0)
+        {
+            return false;
+        }
+
+        var bold = 0;
+        foreach (var letter in letters)
+        {
+            if (IsBoldFontName(letter.FontName))
+            {
+                bold++;
+            }
+        }
+
+        return bold * 2 >= letters.Count;
+    }
+
+    private static bool IsBoldFontName(string? fontName) =>
+        fontName is not null
+        && (fontName.Contains("Bold", StringComparison.OrdinalIgnoreCase)
+            || fontName.Contains("Black", StringComparison.OrdinalIgnoreCase)
+            || fontName.Contains("Heavy", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Flattens column-split lines into reading order: within each band delimited by
     /// full-width lines, the left column is read top-to-bottom, then the right column.</summary>
@@ -531,10 +560,15 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
                 return;
             }
 
+            var head = paragraph[0];
             var isHeading = paragraph.Count == 1
                             && bodyFont > 0
-                            && paragraph[0].FontSize >= bodyFont * HeadingSizeRatio
-                            && paragraph[0].Words.Count <= 12;
+                            && head.Words.Count <= 12
+                            // Enlarged relative to the body, or a bold face that is at least body
+                            // size (so a same-size bold section title is promoted, but a smaller
+                            // bold label — e.g. a table column header — is not).
+                            && (head.FontSize >= bodyFont * HeadingSizeRatio
+                                || (head.Bold && head.FontSize >= bodyFont * 0.99));
 
             var text = JoinWrapped(paragraph);
             if (sb.Length > 0)
@@ -652,6 +686,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         double CenterY,
         double Height,
         double FontSize,
+        bool Bold,
         LineRegion Region,
         IReadOnlyList<Word> Words);
 }

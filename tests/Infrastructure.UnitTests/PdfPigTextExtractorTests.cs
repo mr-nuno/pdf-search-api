@@ -79,6 +79,19 @@ public class PdfPigTextExtractorTests
     }
 
     [Fact]
+    public void Promotes_Bold_SameSize_Line_To_Markdown_Heading()
+    {
+        // The heading is bold but no larger than the body, so the size-ratio rule alone misses it.
+        var pdf = TestPdf.CreateBoldHeadingPage(
+            heading: "FRIA HANDLINGAR",
+            "The serpent lurks in the corridor.");
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        page.Content.ShouldContain("## FRIA HANDLINGAR");
+    }
+
+    [Fact]
     public void Captures_Bottom_Running_Footer_As_Header_And_Strips_PageNumber()
     {
         var pdf = TestPdf.CreateBottomFooterPage(

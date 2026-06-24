@@ -89,6 +89,32 @@ public static class TestPdf
     }
 
     /// <summary>
+    /// Builds a single-page PDF whose heading is set in <b>bold at the same point size</b> as the
+    /// body (rather than enlarged) — the way many books mark section titles. Exercises promoting a
+    /// heading by font weight, not just by a larger size.
+    /// </summary>
+    public static byte[] CreateBoldHeadingPage(string heading, params string[] bodyParagraphs)
+    {
+        var builder = new PdfDocumentBuilder();
+        var body = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var bold = builder.AddStandard14Font(Standard14Font.HelveticaBold);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        // Heading in bold, same 12pt as the body, set apart by a wide gap so it reads as its own line.
+        page.AddText(heading, 12, new PdfPoint(25, 740), bold);
+
+        double y = 700;
+        foreach (var paragraph in bodyParagraphs)
+        {
+            page.AddText(paragraph, 12, new PdfPoint(25, y), body);
+            y -= 40;
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
     /// Builds a single-page PDF whose running head sits in the BOTTOM margin (a running footer) with
     /// the printed page number on its own line below it — the layout of many books, and the mirror
     /// of <see cref="CreateStructuredPage"/>'s top header. Exercises detecting running furniture at
