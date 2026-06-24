@@ -45,14 +45,29 @@ public static class DependencyInjection
     // A secured RavenDB cluster (e.g. RavenDB Cloud over https) authenticates the client with an
     // X.509 client certificate; an unsecured store — including the TLS-fronted but open
     // ravendb.pew.local — needs none. Returning null leaves the store unauthenticated.
+    //
+    // Resolution order:
+    //   1. RAVENDB_CERT_BASE64 env var — base64-encoded PFX, used in production (no file on disk).
+    //   2. RavenDb:CertificatePath config — file path fallback for local overrides.
     private static X509Certificate2? LoadCertificate(RavenDbOptions options)
     {
+        var base64 = Environment.GetEnvironmentVariable("RAVENDB_CERT_BASE64");
+        if (!string.IsNullOrWhiteSpace(base64))
+        {
+            var bytes = Convert.FromBase64String(base64);
+            return X509CertificateLoader.LoadPkcs12(bytes, password: null);
+        }
+
         if (string.IsNullOrWhiteSpace(options.CertificatePath))
+        {
             return null;
+        }
 
         if (!File.Exists(options.CertificatePath))
+        {
             throw new FileNotFoundException(
                 $"RavenDB client certificate not found at '{options.CertificatePath}'.", options.CertificatePath);
+        }
 
         return X509CertificateLoader.LoadPkcs12FromFile(
             options.CertificatePath,

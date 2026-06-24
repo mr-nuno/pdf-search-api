@@ -19,3 +19,8 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets — never commit
+certificates/
+.env.cloud
+docker-compose.cloud.yml
