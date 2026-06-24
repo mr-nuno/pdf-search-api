@@ -1,3 +1,4 @@
+using Api.Auth;
 using Api.Extensions;
 using Application.Common.Models;
 using Application.Features.Sources.DeleteSource;
@@ -13,7 +14,7 @@ public sealed class DeleteSourceEndpoint(ISender sender)
     public override void Configure()
     {
         Delete("/sources");
-        AllowAnonymous();
+        Policies(AuthPolicy.Write);
         Tags("Sources");
         Summary(s =>
         {

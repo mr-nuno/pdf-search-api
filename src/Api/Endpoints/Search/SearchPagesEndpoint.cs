@@ -1,3 +1,4 @@
+using Api.Auth;
 using Api.Extensions;
 using Application.Common.Models;
 using Application.Features.Search.SearchPages;
@@ -13,7 +14,7 @@ public sealed class SearchPagesEndpoint(ISender sender)
     public override void Configure()
     {
         Get("/search");
-        AllowAnonymous();
+        Policies(AuthPolicy.Read);
         Tags("Search");
         Summary(s =>
         {

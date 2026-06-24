@@ -16,7 +16,7 @@ search hits can be targeted precisely to a source file and page number.
 - **Multiple tags** — documents can be tagged with multiple labels (stored lowercase). Search and source listing both reflect all tags.
 - **Source management** — list all ingested source files, replace a document in-place (PUT), or delete a source and all its pages.
 - **Consistent envelope** — every endpoint returns `ApiResponse<T>`, never a raw DTO.
-- **Production-ready scaffolding** — Serilog (Console + Seq), health probes, Scalar/OpenAPI, global exception handling, Entra-ID JWT auth scaffold.
+- **Production-ready scaffolding** — Serilog (Console + Seq), health probes, Scalar/OpenAPI, global exception handling, Logto JWT auth (scope-based: `api:read` for GET, `api:write` for POST/PUT/DELETE; auto-bypass in Development).
 
 ## Tech stack
 
@@ -54,10 +54,20 @@ or `IAsyncDocumentSession`. The seam exposes Raven's native `IRavenQueryable<T>`
 `IAsyncDocumentSession` and `RavenContext` are scoped (one session = one unit of work per request).
 Store conventions live in one place: `RavenConventions.Apply(IDocumentStore)`.
 
-## API
+## Auth
 
-Functional endpoints are `AllowAnonymous()` (no authorization model yet — the Entra-ID JWT pipeline
-is scaffolded for later gating).
+Auth is provided by **Logto** (`https://auth.pewi.se/oidc`). All endpoints require a valid Bearer
+token with the appropriate scope:
+
+| Scope       | Methods              |
+|-------------|----------------------|
+| `api:read`  | GET                  |
+| `api:write` | POST, PUT, DELETE    |
+
+In **Development** (`ASPNETCORE_ENVIRONMENT=Development`) every request is automatically
+authenticated with both scopes — no token needed.
+
+## API
 
 ### Ingest a PDF
 
@@ -206,10 +216,35 @@ Both return `{ "status": "Healthy", "version": "1.0.0" }`.
 
 ### Run everything with Docker Compose
 
-Brings up the API, RavenDB, and Seq:
+Two convenience scripts are provided.
+
+**Local** — builds the image from source (no cache) and brings up the API, RavenDB, and Seq:
 
 ```bash
-docker compose up --build
+./start-local.sh
+```
+
+**Cloud** — pulls the latest published image and connects to RavenDB Cloud. Requires a gitignored
+`.env.cloud` file in the project root containing `RAVENDB_CERT_BASE64` (base64-encoded PFX):
+
+```bash
+./start-cloud.sh
+```
+
+To generate the base64 value from a PFX file:
+
+```bash
+# Linux / macOS
+base64 -w 0 < your-cert.pfx
+
+# macOS (if -w is unsupported)
+base64 -i your-cert.pfx
+```
+
+Paste the output as the value in `.env.cloud`:
+
+```
+RAVENDB_CERT_BASE64=<paste here>
 ```
 
 | Service              | URL                                            |
@@ -257,6 +292,21 @@ RavenDB config lives under the `RavenDb` section (no `ConnectionStrings`):
   "RavenDb": {
     "Urls": [ "http://localhost:8080" ],
     "Database": "PdfSearch"
+  }
+}
+```
+
+For a secured cluster (e.g. RavenDB Cloud), supply the client certificate as a base64-encoded PFX
+via the `RAVENDB_CERT_BASE64` environment variable. As a file-based fallback, set
+`RavenDb:CertificatePath` (and optionally `RavenDb:CertificatePassword`).
+
+Auth config lives under the `Logto` section (not needed in Development):
+
+```json
+{
+  "Logto": {
+    "Authority": "https://auth.pewi.se/oidc",
+    "Audience": "https://api.pdf-ingest.pewi.se"
   }
 }
 ```

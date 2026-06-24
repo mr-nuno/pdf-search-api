@@ -1,3 +1,4 @@
+using Api.Auth;
 using Api.Extensions;
 using Application.Common.Models;
 using Application.Features.Ingestion.IngestDocument;
@@ -13,7 +14,7 @@ public sealed class ReingestDocumentEndpoint(ISender sender)
     public override void Configure()
     {
         Put("/documents");
-        AllowAnonymous();
+        Policies(AuthPolicy.Write);
         AllowFileUploads();
         Tags("Documents");
         Summary(s =>

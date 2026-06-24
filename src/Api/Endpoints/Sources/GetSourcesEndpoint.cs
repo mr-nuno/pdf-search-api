@@ -1,3 +1,4 @@
+using Api.Auth;
 using Api.Extensions;
 using Application.Common.Models;
 using Application.Features.Sources.GetSources;
@@ -13,7 +14,7 @@ public sealed class GetSourcesEndpoint(ISender sender)
     public override void Configure()
     {
         Get("/sources");
-        AllowAnonymous();
+        Policies(AuthPolicy.Read);
         Tags("Sources");
         Summary(s =>
         {
