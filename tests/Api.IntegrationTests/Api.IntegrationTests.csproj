@@ -14,7 +14,7 @@
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="RavenDB.TestDriver" Version="7.2.4" />
     <PackageReference Include="Shouldly" Version="4.3.0" />
-    <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
+    <PackageReference Include="PdfPig" Version="0.1.14" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>

@@ -4,6 +4,10 @@ using Application.Common.Interfaces;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
+using UglyToad.PdfPig.DocumentLayoutAnalysis;
+using UglyToad.PdfPig.DocumentLayoutAnalysis.PageSegmenter;
+using UglyToad.PdfPig.DocumentLayoutAnalysis.ReadingOrderDetector;
+using UglyToad.PdfPig.DocumentLayoutAnalysis.WordExtractor;
 
 namespace Infrastructure.Pdf;
 
@@ -13,9 +17,9 @@ namespace Infrastructure.Pdf;
 /// one run), this reconstructs visual lines from word positions, splits off the running header and
 /// printed page number, and renders the body as markdown so consumers can display it cleanly.
 ///
-/// Line reconstruction is column-aware: a multi-column page (e.g. a two-column book) is segmented
-/// on its vertical whitespace gutter so words from different columns are never fused into one
-/// scrambled line, and the columns are emitted in reading order (left-to-right, top-to-bottom).
+/// Line reconstruction leans on PdfPig's layout analysis: the page is segmented into text blocks and
+/// those blocks are ordered for reading, so any multi-column page (a two-column book, a three-column
+/// reference) reads in order instead of fusing words from different columns into scrambled lines.
 /// </summary>
 public sealed class PdfPigTextExtractor : IPdfTextExtractor
 {
@@ -50,7 +54,9 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         var pages = new List<PageLines>();
         foreach (var page in document.GetPages())
         {
-            var words = page.GetWords()
+            // NearestNeighbour word grouping is more robust across varied layouts than the default
+            // extractor, and feeds the page segmenter in ReconstructLines.
+            var words = NearestNeighbourWordExtractor.Instance.GetWords(page.Letters)
                 .Where(w => !string.IsNullOrWhiteSpace(w.Text))
                 .ToList();
             if (words.Count == 0)
@@ -135,14 +141,21 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         var bodyHeight = Median((middle.Count > 0 ? middle : page.Lines).Select(l => l.Height));
         var isolationGap = Math.Max(bodyHeight * 2.5, 1.0);
 
-        // Smallest gap to a line above / below this one (ignoring lines at the same height, i.e. the
-        // other column's half of the same row). Infinite when there is no line on that side.
+        // Lines whose centres are within this of each other belong to the same horizontal row — e.g.
+        // a running header and the page number sitting beside it, which the segmenter splits into two
+        // separate lines at (near) the same height. Such a sibling must not count as the line's
+        // nearest neighbour when measuring isolation, or the header would look "crowded" by its own
+        // page number and never be recognised as furniture.
+        var sameRow = Math.Max(bodyHeight * 0.6, 2.0);
+
+        // Smallest gap to a line above / below this one (ignoring lines on the same row, i.e. another
+        // column's text at the same height). Infinite when there is no line on that side.
         double GapAbove(double y) => page.Lines
-            .Where(l => l.CenterY > y + 0.01)
+            .Where(l => l.CenterY > y + sameRow)
             .Select(l => l.CenterY - y)
             .DefaultIfEmpty(double.PositiveInfinity).Min();
         double GapBelow(double y) => page.Lines
-            .Where(l => l.CenterY < y - 0.01)
+            .Where(l => l.CenterY < y - sameRow)
             .Select(l => y - l.CenterY)
             .DefaultIfEmpty(double.PositiveInfinity).Min();
 
@@ -218,217 +231,50 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
             .ToLowerInvariant();
 
     /// <summary>
-    /// Reconstructs the page's visual lines in reading order. Words are clustered into rows by
-    /// vertical position, each row is split at the page's column gutter (if any) so two columns
-    /// sharing a vertical position become two separate lines, and the resulting lines are ordered
-    /// column-by-column within each full-width band.
+    /// Reconstructs the page's visual lines in reading order using PdfPig's layout analysis: the
+    /// page is segmented into text blocks (any number of columns), the blocks are ordered for
+    /// reading, and each block's lines are read top-to-bottom. Each line is tagged with its block
+    /// index so paragraph breaks can fall on block boundaries.
     /// </summary>
     private static List<Line> ReconstructLines(IReadOnlyList<Word> words)
     {
-        var medianHeight = Median(words.Select(w => w.BoundingBox.Height));
-        var tolerance = Math.Max(medianHeight * 0.5, 1.0);
-
-        var gutter = DetectGutter(words, medianHeight);
-
-        var lines = new List<Line>();
-        foreach (var row in ClusterRows(words, tolerance))
+        if (words.Count == 0)
         {
-            lines.AddRange(SplitRowAtGutter(row, gutter));
+            return [];
         }
 
-        return OrderForReading(lines);
-    }
-
-    /// <summary>Clusters words whose vertical centres are close into single visual rows, ordered
-    /// top-to-bottom (PDF Y grows upward, so a larger centre is higher on the page). A row may still
-    /// span several columns — <see cref="SplitRowAtGutter"/> separates those.</summary>
-    private static List<List<Word>> ClusterRows(IReadOnlyList<Word> words, double tolerance)
-    {
-        var ordered = words
-            .Select(w => new Placed(w, CenterY(w.BoundingBox)))
-            .OrderByDescending(p => p.CenterY)
+        var blocks = RecursiveXYCut.Instance.GetBlocks(words).ToList();
+        var ordered = UnsupervisedReadingOrderDetector.Instance.Get(blocks)
+            .OrderBy(b => b.ReadingOrder)
             .ToList();
 
-        var buckets = new List<List<Word>>();
-        var bucketCenterY = 0.0;
-        foreach (var placed in ordered)
+        var lines = new List<Line>();
+        for (var block = 0; block < ordered.Count; block++)
         {
-            if (buckets.Count == 0 || Math.Abs(bucketCenterY - placed.CenterY) > tolerance)
+            // PDF Y grows upward, so a larger centre is higher on the page: read top-to-bottom.
+            foreach (var textLine in ordered[block].TextLines.OrderByDescending(l => CenterY(l.BoundingBox)))
             {
-                buckets.Add([placed.Word]);
-                bucketCenterY = placed.CenterY;
-            }
-            else
-            {
-                buckets[^1].Add(placed.Word);
+                lines.Add(MakeLine(textLine, block));
             }
         }
 
-        return buckets;
+        return lines;
     }
 
-    /// <summary>
-    /// Detects a single dominant vertical whitespace gutter (the channel between two text columns)
-    /// from the words' horizontal projection profile, or <c>null</c> when the page reads as one
-    /// column. A handful of full-width lines (titles, wide tables) may cross the gutter without
-    /// hiding it, because the channel is still mostly empty relative to the dense columns.
-    /// Only one gutter is detected, so pages with three or more columns fall back to single-column
-    /// reading order for the extra columns.
-    /// </summary>
-    private static (double Start, double End)? DetectGutter(IReadOnlyList<Word> words, double medianHeight)
+    /// <summary>Builds a <see cref="Line"/> from a segmented text line, tagged with the reading-order
+    /// index of the block it came from.</summary>
+    private static Line MakeLine(TextLine textLine, int block)
     {
-        // Too few words to reason about columns — treat as a single column (also keeps small
-        // synthetic/structured pages, where a lone corner page number is the only right-side token,
-        // from being mistaken for a second column).
-        if (words.Count < 12)
-        {
-            return null;
-        }
-
-        var minLeft = words.Min(w => w.BoundingBox.Left);
-        var maxRight = words.Max(w => w.BoundingBox.Right);
-        var span = maxRight - minLeft;
-        if (span <= 0)
-        {
-            return null;
-        }
-
-        const int bins = 100;
-        var binWidth = span / bins;
-
-        // density[b] = how many words horizontally overlap bin b. Column interiors are dense; a
-        // gutter is a near-empty channel running down the page.
-        var density = new int[bins];
-        foreach (var word in words)
-        {
-            var first = (int)((word.BoundingBox.Left - minLeft) / binWidth);
-            var last = (int)((word.BoundingBox.Right - minLeft) / binWidth);
-            first = Math.Clamp(first, 0, bins - 1);
-            last = Math.Clamp(last, 0, bins - 1);
-            for (var b = first; b <= last; b++)
-            {
-                density[b]++;
-            }
-        }
-
-        var peak = density.Max();
-        if (peak == 0)
-        {
-            return null;
-        }
-
-        // A bin counts as empty when only the odd full-width line crosses it (<=10% of the peak
-        // column density). Search the interior only — the outer margins are empty too.
-        var emptyThreshold = peak * 0.10;
-        var lo = bins / 5;
-        var hi = bins - bins / 5 - 1;
-
-        var bestStart = -1;
-        var bestLength = 0;
-        var runStart = -1;
-        var runLength = 0;
-        for (var b = lo; b <= hi; b++)
-        {
-            if (density[b] <= emptyThreshold)
-            {
-                if (runLength == 0)
-                {
-                    runStart = b;
-                }
-
-                runLength++;
-                if (runLength > bestLength)
-                {
-                    bestLength = runLength;
-                    bestStart = runStart;
-                }
-            }
-            else
-            {
-                runLength = 0;
-            }
-        }
-
-        if (bestStart < 0)
-        {
-            return null;
-        }
-
-        var gutterWidth = bestLength * binWidth;
-        // A real gutter is at least a line-height wide; anything narrower is just inter-word spacing.
-        if (gutterWidth < medianHeight)
-        {
-            return null;
-        }
-
-        var start = minLeft + bestStart * binWidth;
-        var end = minLeft + (bestStart + bestLength) * binWidth;
-        var center = (start + end) / 2.0;
-
-        // Require substantial text on both sides — otherwise the "gutter" just separates the body
-        // from a lone margin token (e.g. a page number), not two genuine columns.
-        var leftCount = words.Count(w => CenterX(w.BoundingBox) < center);
-        var minPerSide = words.Count * 0.15;
-        if (leftCount < minPerSide || words.Count - leftCount < minPerSide)
-        {
-            return null;
-        }
-
-        return (start, end);
-    }
-
-    /// <summary>Splits a visual row at the column gutter. A row with words on both sides of the
-    /// gutter becomes two lines; a row whose text spans the gutter (a full-width title or table)
-    /// stays one full-width line; a single-column page yields one full-width line per row.</summary>
-    private static IEnumerable<Line> SplitRowAtGutter(IReadOnlyList<Word> row, (double Start, double End)? gutter)
-    {
-        if (gutter is null)
-        {
-            yield return MakeLine(row, LineRegion.Full);
-            yield break;
-        }
-
-        var (gutterStart, gutterEnd) = gutter.Value;
-
-        // Any word straddling the channel makes this a genuine full-width line, so keep it whole.
-        foreach (var word in row)
-        {
-            if (word.BoundingBox.Left < gutterEnd && word.BoundingBox.Right > gutterStart)
-            {
-                yield return MakeLine(row, LineRegion.Full);
-                yield break;
-            }
-        }
-
-        var center = (gutterStart + gutterEnd) / 2.0;
-        var left = row.Where(w => CenterX(w.BoundingBox) < center).ToList();
-        var right = row.Where(w => CenterX(w.BoundingBox) >= center).ToList();
-
-        if (left.Count > 0)
-        {
-            yield return MakeLine(left, LineRegion.Left);
-        }
-
-        if (right.Count > 0)
-        {
-            yield return MakeLine(right, LineRegion.Right);
-        }
-    }
-
-    /// <summary>Builds a <see cref="Line"/> from the words on one side of a row, ordered
-    /// left-to-right.</summary>
-    private static Line MakeLine(IReadOnlyList<Word> words, LineRegion region)
-    {
-        var sorted = words.OrderBy(w => w.BoundingBox.Left).ToList();
-        var letters = sorted.SelectMany(w => w.Letters).ToList();
+        var words = textLine.Words.OrderBy(w => w.BoundingBox.Left).ToList();
+        var letters = words.SelectMany(w => w.Letters).ToList();
         return new Line(
-            Text: string.Join(" ", sorted.Select(w => w.Text)),
-            CenterY: sorted.Average(w => CenterY(w.BoundingBox)),
-            Height: Median(sorted.Select(w => w.BoundingBox.Height)),
+            Text: string.Join(" ", words.Select(w => w.Text)),
+            CenterY: words.Average(w => CenterY(w.BoundingBox)),
+            Height: Median(words.Select(w => w.BoundingBox.Height)),
             FontSize: Median(letters.Select(l => l.PointSize)),
             Bold: IsBold(letters),
-            Region: region,
-            Words: sorted);
+            Block: block,
+            Words: words);
     }
 
     /// <summary>True if most of the line is set in a bold/black/heavy face — a font-weight signal
@@ -457,46 +303,6 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         && (fontName.Contains("Bold", StringComparison.OrdinalIgnoreCase)
             || fontName.Contains("Black", StringComparison.OrdinalIgnoreCase)
             || fontName.Contains("Heavy", StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>Flattens column-split lines into reading order: within each band delimited by
-    /// full-width lines, the left column is read top-to-bottom, then the right column.</summary>
-    private static List<Line> OrderForReading(List<Line> lines)
-    {
-        var ordered = lines.OrderByDescending(l => l.CenterY).ToList();
-
-        var result = new List<Line>(ordered.Count);
-        var pendingLeft = new List<Line>();
-        var pendingRight = new List<Line>();
-
-        void FlushColumns()
-        {
-            result.AddRange(pendingLeft);
-            result.AddRange(pendingRight);
-            pendingLeft.Clear();
-            pendingRight.Clear();
-        }
-
-        foreach (var line in ordered)
-        {
-            switch (line.Region)
-            {
-                case LineRegion.Left:
-                    pendingLeft.Add(line);
-                    break;
-                case LineRegion.Right:
-                    pendingRight.Add(line);
-                    break;
-                default:
-                    // A full-width line closes the current two-column band.
-                    FlushColumns();
-                    result.Add(line);
-                    break;
-            }
-        }
-
-        FlushColumns();
-        return result;
-    }
 
     /// <summary>Strips a numeric-only corner token (printed page number) from a margin line and
     /// returns the remaining text. Only the first and last token are candidates, so a numeral
@@ -562,8 +368,8 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
     }
 
     /// <summary>Builds the page body, splicing reconstructed tables into the prose at their vertical
-    /// position. The prose between/around tables is rebuilt band-by-band so column reading order is
-    /// re-established within each band (a full-width table separates the page into bands).</summary>
+    /// position. The prose lines arrive already in reading order, so each band between/around tables
+    /// keeps that order (a full-width table separates the page into bands).</summary>
     private static string BuildBodyContent(List<Line> bodyLines, IReadOnlyList<PdfTableExtractor.DetectedTable> tables)
     {
         if (tables.Count == 0)
@@ -584,7 +390,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
                 return;
             }
 
-            var markdown = BuildMarkdown(OrderForReading(band));
+            var markdown = BuildMarkdown(band);
             if (markdown.Length > 0)
             {
                 parts.Add(markdown);
@@ -603,8 +409,9 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         return string.Join("\n\n", parts);
     }
 
-    /// <summary>Renders body lines as markdown: lines are grouped into paragraphs on vertical gaps,
-    /// wrapped lines are re-joined (de-hyphenated), and large single lines become headings.</summary>
+    /// <summary>Renders body lines as markdown: lines are grouped into paragraphs on block
+    /// boundaries and vertical gaps, wrapped lines are re-joined (de-hyphenated), and large single
+    /// lines become headings.</summary>
     private static string BuildMarkdown(List<Line> bodyLines)
     {
         if (bodyLines.Count == 0)
@@ -657,12 +464,15 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         {
             if (i > 0)
             {
-                // bodyLines are in reading order. A positive drop within a column marks a paragraph
-                // break once it exceeds the gap; a non-positive drop means we have moved to a new
-                // column or band (the next line sits higher up the page), which always starts a new
-                // paragraph.
-                var drop = bodyLines[i - 1].CenterY - bodyLines[i].CenterY;
-                if (drop <= 0 || drop > paragraphGap)
+                var previous = bodyLines[i - 1];
+                var current = bodyLines[i];
+
+                // A change of segmented block always starts a new paragraph (a separate column or a
+                // visually distinct group). Within a block, bodyLines are top-to-bottom: a positive
+                // drop larger than the gap marks a paragraph break, and a non-positive drop means we
+                // have moved to a line that sits higher up the page, which also starts a paragraph.
+                var drop = previous.CenterY - current.CenterY;
+                if (current.Block != previous.Block || drop <= 0 || drop > paragraphGap)
                 {
                     Flush();
                 }
@@ -758,23 +568,6 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         return false;
     }
 
-    /// <summary>A word paired with its precomputed vertical centre, so it is calculated once
-    /// rather than on every sort comparison and bucketing test.</summary>
-    private readonly record struct Placed(Word Word, double CenterY);
-
-    /// <summary>Which column region a reconstructed line belongs to within its page.</summary>
-    private enum LineRegion
-    {
-        /// <summary>Spans the full text width (single-column page, title, or wide table row).</summary>
-        Full,
-
-        /// <summary>Left column of a two-column band.</summary>
-        Left,
-
-        /// <summary>Right column of a two-column band.</summary>
-        Right
-    }
-
     /// <summary>One reconstructed visual line of text.</summary>
     private sealed record Line(
         string Text,
@@ -782,6 +575,6 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         double Height,
         double FontSize,
         bool Bold,
-        LineRegion Region,
+        int Block,
         IReadOnlyList<Word> Words);
 }

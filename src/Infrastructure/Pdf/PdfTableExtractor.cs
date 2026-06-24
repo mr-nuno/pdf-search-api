@@ -68,7 +68,7 @@ internal static class PdfTableExtractor
     private static List<Rule> HorizontalRules(Page page)
     {
         var raw = new List<Rule>();
-        foreach (var path in page.ExperimentalAccess.Paths)
+        foreach (var path in page.Paths)
         {
             foreach (var subpath in path)
             {
