@@ -231,6 +231,22 @@ Two convenience scripts are provided.
 ./start-cloud.sh
 ```
 
+To generate the base64 value from a PFX file:
+
+```bash
+# Linux / macOS
+base64 -w 0 < your-cert.pfx
+
+# macOS (if -w is unsupported)
+base64 -i your-cert.pfx
+```
+
+Paste the output as the value in `.env.cloud`:
+
+```
+RAVENDB_CERT_BASE64=<paste here>
+```
+
 | Service              | URL                                            |
 |----------------------|------------------------------------------------|
 | API                  | http://localhost:5000                          |
