@@ -1,0 +1,275 @@
+using UglyToad.PdfPig.Content;
+using UglyToad.PdfPig.Core;
+using UglyToad.PdfPig.Fonts.Standard14Fonts;
+using UglyToad.PdfPig.Writer;
+
+namespace Tests.Common;
+
+/// <summary>Builds small synthetic PDFs (one text line per page) for tests.</summary>
+public static class TestPdf
+{
+    public static byte[] Create(params string[] pageTexts)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        foreach (var text in pageTexts)
+        {
+            var page = builder.AddPage(PageSize.A4);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                page.AddText(text, 12, new PdfPoint(25, 700), font);
+            }
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF with a running header and page number in the top margin, an enlarged
+    /// heading, and body paragraphs — laid out like a real book page so layout-aware extraction can
+    /// be exercised (header/page-number split, markdown heading, paragraph breaks).
+    /// </summary>
+    public static byte[] CreateStructuredPage(
+        string header,
+        string pageNumber,
+        string heading,
+        params string[] bodyParagraphs)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        // Top margin band (>90% of height): running header on the left, page number on the right.
+        page.AddText(header, 12, new PdfPoint(25, 800), font);
+        page.AddText(pageNumber, 12, new PdfPoint(560, 800), font);
+
+        // Body region: an enlarged heading followed by paragraphs spaced far enough apart to read
+        // as separate blocks.
+        page.AddText(heading, 18, new PdfPoint(25, 740), font);
+
+        double y = 705;
+        foreach (var paragraph in bodyParagraphs)
+        {
+            page.AddText(paragraph, 12, new PdfPoint(25, y), font);
+            y -= 40;
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF whose top margin band holds the printed page number in the LEFT
+    /// corner followed by the running header to its right — the mirror of
+    /// <see cref="CreateStructuredPage"/> — so the left-corner page-number strip can be exercised.
+    /// </summary>
+    public static byte[] CreateLeftPageNumberPage(
+        string pageNumber,
+        string header,
+        params string[] bodyParagraphs)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        // Top margin band (>90% of height): page number in the left corner, header to its right.
+        page.AddText(pageNumber, 12, new PdfPoint(25, 800), font);
+        page.AddText(header, 12, new PdfPoint(120, 800), font);
+
+        double y = 705;
+        foreach (var paragraph in bodyParagraphs)
+        {
+            page.AddText(paragraph, 12, new PdfPoint(25, y), font);
+            y -= 40;
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF whose body text runs all the way down into the bottom margin band
+    /// (contiguous lines, no footer), so the lowest line sits inside the band but only a normal
+    /// line-gap from the line above it. Used to check that body spilling into the margin is kept as
+    /// body rather than mistaken for an isolated running footer.
+    /// </summary>
+    public static byte[] CreateBodyRunningIntoBottomMargin(params string[] lines)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt; bottom 10% band is below ~84pt
+
+        double y = 110; // start low so the final lines fall inside the bottom margin band
+        foreach (var line in lines)
+        {
+            page.AddText(line, 12, new PdfPoint(25, y), font);
+            y -= 13;
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF whose heading is set in <b>bold at the same point size</b> as the
+    /// body (rather than enlarged) — the way many books mark section titles. Exercises promoting a
+    /// heading by font weight, not just by a larger size.
+    /// </summary>
+    public static byte[] CreateBoldHeadingPage(string heading, params string[] bodyParagraphs)
+    {
+        var builder = new PdfDocumentBuilder();
+        var body = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var bold = builder.AddStandard14Font(Standard14Font.HelveticaBold);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        // Heading in bold, same 12pt as the body, set apart by a wide gap so it reads as its own line.
+        page.AddText(heading, 12, new PdfPoint(25, 740), bold);
+
+        double y = 700;
+        foreach (var paragraph in bodyParagraphs)
+        {
+            page.AddText(paragraph, 12, new PdfPoint(25, y), body);
+            y -= 40;
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF whose running head sits in the BOTTOM margin (a running footer) with
+    /// the printed page number on its own line below it — the layout of many books, and the mirror
+    /// of <see cref="CreateStructuredPage"/>'s top header. Exercises detecting running furniture at
+    /// the bottom of the page and stripping a centred/standalone page number.
+    /// </summary>
+    public static byte[] CreateBottomFooterPage(
+        string footer,
+        string pageNumber,
+        params string[] bodyParagraphs)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        // Body region, well clear of the bottom margin band (<10% of the height).
+        double y = 740;
+        foreach (var paragraph in bodyParagraphs)
+        {
+            page.AddText(paragraph, 12, new PdfPoint(25, y), font);
+            y -= 40;
+        }
+
+        // Bottom margin band: the running footer, with the page number on its own line beneath it.
+        page.AddText(footer, 12, new PdfPoint(25, 45), font);
+        page.AddText(pageNumber, 12, new PdfPoint(25, 25), font);
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF with two text columns separated by a wide vertical gutter — laid out
+    /// like a two-column book page. The left and right columns share the same vertical bands (each
+    /// left line sits beside a right line), so it exercises column-aware reconstruction: the columns
+    /// must read as two separate blocks (left then right) rather than fusing each row's left and
+    /// right text into one scrambled line. Lines within a column are placed close together so they
+    /// join into one paragraph.
+    /// </summary>
+    public static byte[] CreateTwoColumnPage(string[] leftColumn, string[] rightColumn)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        const double leftX = 50;   // left column body ends well before the gutter
+        const double rightX = 320; // right column starts well after the gutter
+        const double startY = 740;
+        const double leading = 13; // tight enough that a column's lines join into one paragraph
+
+        AddColumn(page, font, leftColumn, leftX, startY, leading);
+        AddColumn(page, font, rightColumn, rightX, startY, leading);
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF containing a ruled table: a header row of labels above the top rule,
+    /// then data rows separated by drawn horizontal lines, with three columns aligned by x-position
+    /// (the last column holding two-word cells). Exercises ruling-line table detection and markdown
+    /// reconstruction.
+    /// </summary>
+    public static byte[] CreateRuledTablePage()
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4);
+
+        // Row-separating horizontal rules (wide and thin) spanning the full table width.
+        foreach (var y in new[] { 735.0, 715.0, 695.0, 675.0 })
+        {
+            page.DrawLine(new PdfPoint(50, y), new PdfPoint(360, y), 1);
+        }
+
+        const double itemX = 60, priceX = 160, effectX = 250;
+
+        // Header labels sit just above the top rule and define the columns.
+        page.AddText("ITEM", 12, new PdfPoint(itemX, 740), font);
+        page.AddText("PRICE", 12, new PdfPoint(priceX, 740), font);
+        page.AddText("EFFECT", 12, new PdfPoint(effectX, 740), font);
+
+        // The effect cell is a natural two-word phrase (normal word-spacing, one cell).
+        void Row(double y, string item, string price, string effect)
+        {
+            page.AddText(item, 12, new PdfPoint(itemX, y), font);
+            page.AddText(price, 12, new PdfPoint(priceX, y), font);
+            page.AddText(effect, 12, new PdfPoint(effectX, y), font);
+        }
+
+        Row(722, "Sword", "10", "Sharp blade");
+        Row(702, "Shield", "5", "Blocks blows");
+        Row(682, "Potion", "3", "Heals wounds");
+
+        return builder.Build();
+    }
+
+    private static void AddColumn(
+        PdfPageBuilder page,
+        PdfDocumentBuilder.AddedFont font,
+        IReadOnlyList<string> lines,
+        double x,
+        double startY,
+        double leading)
+    {
+        var y = startY;
+        foreach (var line in lines)
+        {
+            page.AddText(line, 12, new PdfPoint(x, y), font);
+            y -= leading;
+        }
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF whose body is a run of consecutive lines placed close together
+    /// (small leading) so they cluster into one paragraph — used to exercise wrapped-line joining
+    /// and de-hyphenation.
+    /// </summary>
+    public static byte[] CreateBodyLines(double leading, params string[] lines)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        double y = 700;
+        foreach (var line in lines)
+        {
+            page.AddText(line, 12, new PdfPoint(25, y), font);
+            y -= leading;
+        }
+
+        return builder.Build();
+    }
+}
