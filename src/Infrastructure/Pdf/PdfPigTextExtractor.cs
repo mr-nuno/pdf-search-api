@@ -58,7 +58,14 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
                 continue;
             }
 
-            pages.Add(new PageLines(page.Number, page.Height, ReconstructLines(words)));
+            // Ruled tables are reconstructed separately as markdown; their words are taken out of
+            // the prose stream so they are not re-flowed into garbled lines.
+            var tables = PdfTableExtractor.Detect(page);
+            var proseWords = tables.Count == 0
+                ? words
+                : words.Where(w => !InAnyTable(w, tables)).ToList();
+
+            pages.Add(new PageLines(page.Number, page.Height, ReconstructLines(proseWords), tables));
         }
 
         var runningFurniture = DetectRunningFurniture(pages);
@@ -189,7 +196,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         }
 
         var header = headerParts.Count > 0 ? string.Join(" ", headerParts) : null;
-        var content = BuildMarkdown(bodyLines);
+        var content = BuildBodyContent(bodyLines, page.Tables);
 
         if (content.Length == 0 && header is null)
         {
@@ -554,6 +561,48 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         return true;
     }
 
+    /// <summary>Builds the page body, splicing reconstructed tables into the prose at their vertical
+    /// position. The prose between/around tables is rebuilt band-by-band so column reading order is
+    /// re-established within each band (a full-width table separates the page into bands).</summary>
+    private static string BuildBodyContent(List<Line> bodyLines, IReadOnlyList<PdfTableExtractor.DetectedTable> tables)
+    {
+        if (tables.Count == 0)
+        {
+            return BuildMarkdown(bodyLines);
+        }
+
+        var parts = new List<string>();
+        var upper = double.PositiveInfinity;
+
+        void AppendProse(double lowerExclusive, double upperInclusive)
+        {
+            var band = bodyLines
+                .Where(l => l.CenterY > lowerExclusive && l.CenterY <= upperInclusive)
+                .ToList();
+            if (band.Count == 0)
+            {
+                return;
+            }
+
+            var markdown = BuildMarkdown(OrderForReading(band));
+            if (markdown.Length > 0)
+            {
+                parts.Add(markdown);
+            }
+        }
+
+        foreach (var table in tables.OrderByDescending(t => t.Top))
+        {
+            AppendProse(table.Top, upper);
+            parts.Add(table.Markdown);
+            upper = table.Top;
+        }
+
+        AppendProse(double.NegativeInfinity, upper);
+
+        return string.Join("\n\n", parts);
+    }
+
     /// <summary>Renders body lines as markdown: lines are grouped into paragraphs on vertical gaps,
     /// wrapped lines are re-joined (de-hyphenated), and large single lines become headings.</summary>
     private static string BuildMarkdown(List<Line> bodyLines)
@@ -684,8 +733,30 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         return count % 2 == 0 ? (positives[mid - 1] + positives[mid]) / 2.0 : positives[mid];
     }
 
-    /// <summary>A page's reconstructed lines paired with the data needed to classify its margins.</summary>
-    private sealed record PageLines(int Number, double Height, List<Line> Lines);
+    /// <summary>A page's reconstructed prose lines and any ruled tables, plus the data needed to
+    /// classify its margins.</summary>
+    private sealed record PageLines(
+        int Number,
+        double Height,
+        List<Line> Lines,
+        IReadOnlyList<PdfTableExtractor.DetectedTable> Tables);
+
+    /// <summary>True if the word falls inside a detected table's region (so it belongs to the table
+    /// markdown, not the prose stream).</summary>
+    private static bool InAnyTable(Word word, IReadOnlyList<PdfTableExtractor.DetectedTable> tables)
+    {
+        var x = (word.BoundingBox.Left + word.BoundingBox.Right) / 2.0;
+        var y = CenterY(word.BoundingBox);
+        foreach (var t in tables)
+        {
+            if (y >= t.Bottom && y <= t.Top && x >= t.Left && x <= t.Right)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>A word paired with its precomputed vertical centre, so it is calculated once
     /// rather than on every sort comparison and bucketing test.</summary>

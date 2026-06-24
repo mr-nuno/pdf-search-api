@@ -160,6 +160,20 @@ public class PdfPigTextExtractorTests
     }
 
     [Fact]
+    public void Reconstructs_Ruled_Table_As_Markdown()
+    {
+        var pdf = TestPdf.CreateRuledTablePage();
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        page.Content.ShouldContain("| ITEM | PRICE | EFFECT |");
+        page.Content.ShouldContain("| --- | --- | --- |");
+        // Cells are assigned to the right column and two-word cells are joined in order.
+        page.Content.ShouldContain("| Sword | 10 | Sharp blade |");
+        page.Content.ShouldContain("| Potion | 3 | Heals wounds |");
+    }
+
+    [Fact]
     public void Omits_Blank_Pages_And_Keeps_Physical_PageNumbers()
     {
         var pdf = TestPdf.Create("first page content", "   ", "third page content");

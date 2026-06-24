@@ -194,6 +194,47 @@ public static class TestPdf
         return builder.Build();
     }
 
+    /// <summary>
+    /// Builds a single-page PDF containing a ruled table: a header row of labels above the top rule,
+    /// then data rows separated by drawn horizontal lines, with three columns aligned by x-position
+    /// (the last column holding two-word cells). Exercises ruling-line table detection and markdown
+    /// reconstruction.
+    /// </summary>
+    public static byte[] CreateRuledTablePage()
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4);
+
+        // Row-separating horizontal rules (wide and thin) spanning the full table width.
+        foreach (var y in new[] { 735.0, 715.0, 695.0, 675.0 })
+        {
+            page.DrawLine(new PdfPoint(50, y), new PdfPoint(360, y), 1);
+        }
+
+        const double itemX = 60, priceX = 160, effectX = 250;
+
+        // Header labels sit just above the top rule and define the columns.
+        page.AddText("ITEM", 12, new PdfPoint(itemX, 740), font);
+        page.AddText("PRICE", 12, new PdfPoint(priceX, 740), font);
+        page.AddText("EFFECT", 12, new PdfPoint(effectX, 740), font);
+
+        // The effect cell is a natural two-word phrase (normal word-spacing, one cell).
+        void Row(double y, string item, string price, string effect)
+        {
+            page.AddText(item, 12, new PdfPoint(itemX, y), font);
+            page.AddText(price, 12, new PdfPoint(priceX, y), font);
+            page.AddText(effect, 12, new PdfPoint(effectX, y), font);
+        }
+
+        Row(722, "Sword", "10", "Sharp blade");
+        Row(702, "Shield", "5", "Blocks blows");
+        Row(682, "Potion", "3", "Heals wounds");
+
+        return builder.Build();
+    }
+
     private static void AddColumn(
         PdfPageBuilder page,
         PdfDocumentBuilder.AddedFont font,
