@@ -1,5 +1,5 @@
+using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
 using Application.Common.Interfaces;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
@@ -13,7 +13,7 @@ namespace Infrastructure.Pdf;
 /// one run), this reconstructs visual lines from word positions, splits off the running header and
 /// printed page number, and renders the body as markdown so consumers can display it cleanly.
 /// </summary>
-public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
+public sealed class PdfPigTextExtractor : IPdfTextExtractor
 {
     // Fraction of page height treated as the top/bottom margin bands where running headers,
     // footers and page numbers live. A line whose vertical centre is above the header threshold
@@ -24,9 +24,6 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
     // A single body line whose font is at least this much larger than the page's body text is
     // promoted to a markdown heading.
     private const double HeadingSizeRatio = 1.3;
-
-    [GeneratedRegex(@"^\d{1,4}$")]
-    private static partial Regex NumericOnly();
 
     public IEnumerable<PdfPageText> Extract(Stream pdfStream)
     {
@@ -99,31 +96,36 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
         var medianHeight = Median(words.Select(w => w.BoundingBox.Height));
         var tolerance = Math.Max(medianHeight * 0.5, 1.0);
 
-        // Sort top-to-bottom (PDF Y grows upward, so larger centre = higher on the page) so that
-        // words belonging to one line are contiguous and a new line starts on a vertical jump.
-        var ordered = words.OrderByDescending(w => CenterY(w.BoundingBox)).ToList();
+        // Project each word to its vertical centre once, then sort top-to-bottom (PDF Y grows
+        // upward, so larger centre = higher on the page) so words of one line are contiguous and a
+        // new line starts on a vertical jump.
+        var ordered = words
+            .Select(w => new Placed(w, CenterY(w.BoundingBox)))
+            .OrderByDescending(p => p.CenterY)
+            .ToList();
 
-        var buckets = new List<List<Word>>();
-        foreach (var word in ordered)
+        var buckets = new List<List<Placed>>();
+        var bucketCenterY = 0.0;
+        foreach (var placed in ordered)
         {
-            var y = CenterY(word.BoundingBox);
-            if (buckets.Count == 0 || Math.Abs(CenterY(buckets[^1][0].BoundingBox) - y) > tolerance)
+            if (buckets.Count == 0 || Math.Abs(bucketCenterY - placed.CenterY) > tolerance)
             {
-                buckets.Add([word]);
+                buckets.Add([placed]);
+                bucketCenterY = placed.CenterY;
             }
             else
             {
-                buckets[^1].Add(word);
+                buckets[^1].Add(placed);
             }
         }
 
         var lines = new List<Line>(buckets.Count);
         foreach (var bucket in buckets)
         {
-            var sorted = bucket.OrderBy(w => w.BoundingBox.Left).ToList();
+            var sorted = bucket.OrderBy(p => p.Word.BoundingBox.Left).Select(p => p.Word).ToList();
             lines.Add(new Line(
                 Text: string.Join(" ", sorted.Select(w => w.Text)),
-                CenterY: sorted.Average(w => CenterY(w.BoundingBox)),
+                CenterY: bucket.Average(p => p.CenterY),
                 Height: Median(sorted.Select(w => w.BoundingBox.Height)),
                 FontSize: Median(sorted.SelectMany(w => w.Letters).Select(l => l.PointSize)),
                 Words: sorted));
@@ -140,14 +142,59 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
         var words = line.Words;
         var stripIndex = -1;
 
-        if (NumericOnly().IsMatch(words[0].Text.Trim()))
+        if (IsCornerNumeral(words[0].Text))
+        {
             stripIndex = 0;
-        else if (words.Count > 1 && NumericOnly().IsMatch(words[^1].Text.Trim()))
+        }
+        else if (words.Count > 1 && IsCornerNumeral(words[^1].Text))
+        {
             stripIndex = words.Count - 1;
+        }
 
-        return string.Join(" ", words
-            .Where((_, i) => i != stripIndex)
-            .Select(w => w.Text)).Trim();
+        // Nothing to strip — the line text is already the space-joined words.
+        if (stripIndex < 0)
+        {
+            return line.Text;
+        }
+
+        var sb = new StringBuilder();
+        for (var i = 0; i < words.Count; i++)
+        {
+            if (i == stripIndex)
+            {
+                continue;
+            }
+
+            if (sb.Length > 0)
+            {
+                sb.Append(' ');
+            }
+
+            sb.Append(words[i].Text);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>True if the token (ignoring surrounding whitespace) is a 1–4 digit numeral — the
+    /// shape of a printed page number. Span-based so no trimmed string is allocated per check.</summary>
+    private static bool IsCornerNumeral(ReadOnlySpan<char> text)
+    {
+        text = text.Trim();
+        if (text.Length is < 1 or > 4)
+        {
+            return false;
+        }
+
+        foreach (var c in text)
+        {
+            if (!char.IsAsciiDigit(c))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Renders body lines as markdown: lines are grouped into paragraphs on vertical gaps,
@@ -231,17 +278,38 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
 
     private static double CenterY(PdfRectangle rect) => (rect.Top + rect.Bottom) / 2.0;
 
-    private static double Median(IEnumerable<double> values)
+    private static double Median(IEnumerable<double> values) =>
+        // ToList into a private buffer the span overload may reorder/compact in place.
+        Median(CollectionsMarshal.AsSpan(values.ToList()));
+
+    private static double Median(Span<double> values)
     {
-        var sorted = values.Where(v => v > 0).OrderBy(v => v).ToList();
-        if (sorted.Count == 0)
+        // Compact the positive values to the front in place, then sort only that prefix — avoids
+        // the filtered-list + OrderBy allocation the IEnumerable path used to make per call.
+        var count = 0;
+        foreach (var value in values)
+        {
+            if (value > 0)
+            {
+                values[count++] = value;
+            }
+        }
+
+        if (count == 0)
         {
             return 0;
         }
 
-        var mid = sorted.Count / 2;
-        return sorted.Count % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2.0 : sorted[mid];
+        var positives = values[..count];
+        positives.Sort();
+
+        var mid = count / 2;
+        return count % 2 == 0 ? (positives[mid - 1] + positives[mid]) / 2.0 : positives[mid];
     }
+
+    /// <summary>A word paired with its precomputed vertical centre, so it is calculated once
+    /// rather than on every sort comparison and bucketing test.</summary>
+    private readonly record struct Placed(Word Word, double CenterY);
 
     /// <summary>One reconstructed visual line of text.</summary>
     private sealed record Line(
