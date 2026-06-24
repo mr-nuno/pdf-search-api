@@ -89,6 +89,29 @@ public static class TestPdf
     }
 
     /// <summary>
+    /// Builds a single-page PDF whose body text runs all the way down into the bottom margin band
+    /// (contiguous lines, no footer), so the lowest line sits inside the band but only a normal
+    /// line-gap from the line above it. Used to check that body spilling into the margin is kept as
+    /// body rather than mistaken for an isolated running footer.
+    /// </summary>
+    public static byte[] CreateBodyRunningIntoBottomMargin(params string[] lines)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt; bottom 10% band is below ~84pt
+
+        double y = 110; // start low so the final lines fall inside the bottom margin band
+        foreach (var line in lines)
+        {
+            page.AddText(line, 12, new PdfPoint(25, y), font);
+            y -= 13;
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
     /// Builds a single-page PDF whose heading is set in <b>bold at the same point size</b> as the
     /// body (rather than enlarged) — the way many books mark section titles. Exercises promoting a
     /// heading by font weight, not just by a larger size.

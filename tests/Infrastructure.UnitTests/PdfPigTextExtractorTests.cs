@@ -79,6 +79,23 @@ public class PdfPigTextExtractorTests
     }
 
     [Fact]
+    public void Keeps_Body_That_Runs_Into_The_Margin_Band_Out_Of_The_Header()
+    {
+        // The last lines sit inside the bottom margin band, but they are contiguous body text — not
+        // a running footer isolated by whitespace.
+        var pdf = TestPdf.CreateBodyRunningIntoBottomMargin(
+            "The ranger descended into the dark",
+            "crypt beneath the silent chapel",
+            "where the ancient relic lay",
+            "guarded by the grimwarden forever");
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        page.Header.ShouldBeNull();
+        page.Content.ShouldContain("grimwarden");
+    }
+
+    [Fact]
     public void Promotes_Bold_SameSize_Line_To_Markdown_Heading()
     {
         // The heading is bold but no larger than the body, so the size-ratio rule alone misses it.

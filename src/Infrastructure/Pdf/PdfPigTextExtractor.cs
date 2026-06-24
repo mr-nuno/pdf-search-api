@@ -33,6 +33,13 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
     // at least this many pages (catches per-chapter running heads that change every dozen pages).
     private const int RunningRepeatThreshold = 3;
 
+    // Word-count ceilings above which a margin line is kept as body rather than treated as a running
+    // header/footer. The isolation-only fallback is stricter than the recurrence path, because a
+    // recurring line is almost certainly furniture whereas a one-off long line is almost certainly
+    // body text (or an errata/colophon note) that merely sits near the margin.
+    private const int RunningHeaderMaxWords = 12;
+    private const int IsolatedHeaderMaxWords = 8;
+
     public IEnumerable<PdfPageText> Extract(Stream pdfStream)
     {
         using var document = PdfDocument.Open(pdfStream);
@@ -111,16 +118,26 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         var headerThreshold = page.Height * HeaderBandTop;
         var footerThreshold = page.Height * FooterBandBottom;
 
-        // The body block is everything between the margin bands; its extent lets us tell an isolated
-        // running header/footer (separated from the body by a wide gap) from body text that merely
-        // runs into the band on a dense page.
+        // A running header/footer is set apart from the body by a band of whitespace. We measure that
+        // against the NEAREST line on the body side (not the body block as a whole): on a dense page
+        // the last body line can sit inside the margin band, but it is only a normal line-gap away
+        // from the line above it, so it is body — not isolated furniture.
         var middle = page.Lines
             .Where(l => l.CenterY < headerThreshold && l.CenterY > footerThreshold)
             .ToList();
         var bodyHeight = Median((middle.Count > 0 ? middle : page.Lines).Select(l => l.Height));
         var isolationGap = Math.Max(bodyHeight * 2.5, 1.0);
-        double? bodyTop = middle.Count > 0 ? middle.Max(l => l.CenterY) : null;
-        double? bodyBottom = middle.Count > 0 ? middle.Min(l => l.CenterY) : null;
+
+        // Smallest gap to a line above / below this one (ignoring lines at the same height, i.e. the
+        // other column's half of the same row). Infinite when there is no line on that side.
+        double GapAbove(double y) => page.Lines
+            .Where(l => l.CenterY > y + 0.01)
+            .Select(l => l.CenterY - y)
+            .DefaultIfEmpty(double.PositiveInfinity).Min();
+        double GapBelow(double y) => page.Lines
+            .Where(l => l.CenterY < y - 0.01)
+            .Select(l => y - l.CenterY)
+            .DefaultIfEmpty(double.PositiveInfinity).Min();
 
         var headerParts = new List<string>();
         var bodyLines = new List<Line>();
@@ -145,12 +162,19 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
 
             var recurs = runningFurniture.Contains(Normalize(line.Text));
             var isolated = inHeaderBand
-                ? bodyTop is null || line.CenterY - bodyTop.Value > isolationGap
-                : bodyBottom is null || bodyBottom.Value - line.CenterY > isolationGap;
+                ? GapBelow(line.CenterY) > isolationGap
+                : GapAbove(line.CenterY) > isolationGap;
 
-            // Treat the line as a running header/footer when it either recurs across pages or sits
-            // alone in the margin, and is short enough to be furniture rather than body.
-            if ((recurs || isolated) && line.Words.Count <= 12)
+            // Treat the line as a running header/footer when it recurs across pages (the reliable
+            // signal), or — for a single occurrence, e.g. a one-page document — when it sits alone
+            // in the margin. The isolation fallback is held to a short line because a running head
+            // is brief; a longer isolated margin line is far more likely to be body text, an errata
+            // note, or a colophon that should stay in the body.
+            var isFurniture = recurs
+                ? line.Words.Count <= RunningHeaderMaxWords
+                : isolated && line.Words.Count <= IsolatedHeaderMaxWords;
+
+            if (isFurniture)
             {
                 var remainder = StripCornerNumeral(line);
                 if (remainder.Length > 0)
