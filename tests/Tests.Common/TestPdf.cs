@@ -89,6 +89,48 @@ public static class TestPdf
     }
 
     /// <summary>
+    /// Builds a single-page PDF with two text columns separated by a wide vertical gutter — laid out
+    /// like a two-column book page. The left and right columns share the same vertical bands (each
+    /// left line sits beside a right line), so it exercises column-aware reconstruction: the columns
+    /// must read as two separate blocks (left then right) rather than fusing each row's left and
+    /// right text into one scrambled line. Lines within a column are placed close together so they
+    /// join into one paragraph.
+    /// </summary>
+    public static byte[] CreateTwoColumnPage(string[] leftColumn, string[] rightColumn)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        const double leftX = 50;   // left column body ends well before the gutter
+        const double rightX = 320; // right column starts well after the gutter
+        const double startY = 740;
+        const double leading = 13; // tight enough that a column's lines join into one paragraph
+
+        AddColumn(page, font, leftColumn, leftX, startY, leading);
+        AddColumn(page, font, rightColumn, rightX, startY, leading);
+
+        return builder.Build();
+    }
+
+    private static void AddColumn(
+        PdfPageBuilder page,
+        PdfDocumentBuilder.AddedFont font,
+        IReadOnlyList<string> lines,
+        double x,
+        double startY,
+        double leading)
+    {
+        var y = startY;
+        foreach (var line in lines)
+        {
+            page.AddText(line, 12, new PdfPoint(x, y), font);
+            y -= leading;
+        }
+    }
+
+    /// <summary>
     /// Builds a single-page PDF whose body is a run of consecutive lines placed close together
     /// (small leading) so they cluster into one paragraph — used to exercise wrapped-line joining
     /// and de-hyphenation.

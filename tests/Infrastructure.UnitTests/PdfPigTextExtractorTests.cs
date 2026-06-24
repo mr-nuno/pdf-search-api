@@ -79,6 +79,38 @@ public class PdfPigTextExtractorTests
     }
 
     [Fact]
+    public void Reads_Two_Columns_In_Order_Without_Fusing_Rows()
+    {
+        // Each left line sits beside a right line on the same vertical band. A layout-unaware
+        // reconstruction would glue them into one row ("...ranger Meanwhile the cloaked...").
+        var pdf = TestPdf.CreateTwoColumnPage(
+            leftColumn:
+            [
+                "Across the moor the ranger",
+                "tracked a wounded alpha",
+                "bravo through cold mist",
+            ],
+            rightColumn:
+            [
+                "Meanwhile the cloaked",
+                "RIGHTGUILD plotted in",
+                "the ruined cathedral",
+            ]);
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        // The left column reconstructs as one contiguous, joined block...
+        page.Content.ShouldContain("wounded alpha bravo through");
+        // ...and the right column is present as its own block, read after the left one.
+        page.Content.ShouldContain("RIGHTGUILD plotted in");
+        page.Content.IndexOf("Across the moor", StringComparison.Ordinal)
+            .ShouldBeLessThan(page.Content.IndexOf("Meanwhile the cloaked", StringComparison.Ordinal));
+
+        // Columns are never fused row-by-row.
+        page.Content.ShouldNotContain("ranger Meanwhile");
+    }
+
+    [Fact]
     public void Omits_Blank_Pages_And_Keeps_Physical_PageNumbers()
     {
         var pdf = TestPdf.Create("first page content", "   ", "third page content");
