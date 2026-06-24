@@ -44,7 +44,7 @@ public sealed partial class PdfPigTextExtractor : IPdfTextExtractor
 
     private static PdfPageText? ExtractPage(Page page)
     {
-        List<Word> words = page.GetWords()
+        var words = page.GetWords()
             .Where(w => !string.IsNullOrWhiteSpace(w.Text))
             .ToList();
         if (words.Count == 0)
