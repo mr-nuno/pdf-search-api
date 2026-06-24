@@ -52,13 +52,17 @@ EF/SQL-specific conventions are superseded by the rules below.
 
 ## Routes & auth
 - Routes are unversioned per the global convention (e.g. `GET /search`, `POST /documents`) — no `/api/` and no `/v{n}/` prefix.
-- Entra-ID JWT auth is scaffolded per global conventions, but functional endpoints are
-  `AllowAnonymous()` (the system has no authorization model). Add `Policies(...)` to gate later.
+- Auth provider: **Logto** at `https://auth.pewi.se/oidc` (not Entra ID).
+- JWT Bearer audience: `https://api.pdf-ingest.pewi.se`. Scopes: `api:read`, `api:write`.
+- Policies are defined in `Api.Auth.AuthPolicy` (`Read`, `Write`). GET endpoints require `Read`; POST/PUT/DELETE require `Write`.
+- In **Development**, a `DevBypassAuthHandler` auto-authenticates every request with both scopes — no real token needed locally.
+- The `scope` claim may be space-separated (`"api:read api:write"`) or multi-valued; `HasScope` in `DependencyInjection` handles both.
 
 ## Config
 - **No** `ConnectionStrings:DefaultConnection`. RavenDB config lives under a `RavenDb` section:
   `Urls` (string[]) + `Database`, plus optional `CertificatePath` / `CertificatePassword` for a
   secured (https) cluster. Serilog config is unchanged from global.
+- Auth config lives under a `Logto` section: `Authority` + `Audience` (not needed in Development — bypass is unconditional).
 
 ## Testing
 - Integration tests use **`RavenDB.TestDriver`** (a real test-mode Raven server) — **not**
