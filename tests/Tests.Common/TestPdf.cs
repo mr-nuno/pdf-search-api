@@ -89,6 +89,37 @@ public static class TestPdf
     }
 
     /// <summary>
+    /// Builds a single-page PDF whose running head sits in the BOTTOM margin (a running footer) with
+    /// the printed page number on its own line below it — the layout of many books, and the mirror
+    /// of <see cref="CreateStructuredPage"/>'s top header. Exercises detecting running furniture at
+    /// the bottom of the page and stripping a centred/standalone page number.
+    /// </summary>
+    public static byte[] CreateBottomFooterPage(
+        string footer,
+        string pageNumber,
+        params string[] bodyParagraphs)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        // Body region, well clear of the bottom margin band (<10% of the height).
+        double y = 740;
+        foreach (var paragraph in bodyParagraphs)
+        {
+            page.AddText(paragraph, 12, new PdfPoint(25, y), font);
+            y -= 40;
+        }
+
+        // Bottom margin band: the running footer, with the page number on its own line beneath it.
+        page.AddText(footer, 12, new PdfPoint(25, 45), font);
+        page.AddText(pageNumber, 12, new PdfPoint(25, 25), font);
+
+        return builder.Build();
+    }
+
+    /// <summary>
     /// Builds a single-page PDF with two text columns separated by a wide vertical gutter — laid out
     /// like a two-column book page. The left and right columns share the same vertical bands (each
     /// left line sits beside a right line), so it exercises column-aware reconstruction: the columns

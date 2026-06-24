@@ -79,6 +79,25 @@ public class PdfPigTextExtractorTests
     }
 
     [Fact]
+    public void Captures_Bottom_Running_Footer_As_Header_And_Strips_PageNumber()
+    {
+        var pdf = TestPdf.CreateBottomFooterPage(
+            footer: "KAPITEL 4 – STRID & SKADA",
+            pageNumber: "108",
+            "The serpent lurks in the corridor.");
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        // The running head sits in the bottom margin, yet it is still the page's header.
+        page.Header.ShouldBe("KAPITEL 4 – STRID & SKADA");
+
+        // The body keeps its prose; the footer and the standalone page number are stripped out.
+        page.Content.ShouldContain("serpent");
+        page.Content.ShouldNotContain("KAPITEL");
+        page.Content.ShouldNotContain("108");
+    }
+
+    [Fact]
     public void Reads_Two_Columns_In_Order_Without_Fusing_Rows()
     {
         // Each left line sits beside a right line on the same vertical band. A layout-unaware

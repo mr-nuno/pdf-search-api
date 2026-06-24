@@ -29,51 +29,133 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
     // promoted to a markdown heading.
     private const double HeadingSizeRatio = 1.3;
 
+    // A margin line is treated as a running header/footer if its text recurs in the margin band of
+    // at least this many pages (catches per-chapter running heads that change every dozen pages).
+    private const int RunningRepeatThreshold = 3;
+
     public IEnumerable<PdfPageText> Extract(Stream pdfStream)
     {
         using var document = PdfDocument.Open(pdfStream);
 
+        // Pass 1: reconstruct every page's visual lines up front. Running headers/footers are
+        // identified by repetition across pages, so the whole document has to be in hand before any
+        // page's margin furniture can be told apart from one-off content sitting in the margins.
+        var pages = new List<PageLines>();
         foreach (var page in document.GetPages())
         {
-            var extracted = ExtractPage(page);
+            var words = page.GetWords()
+                .Where(w => !string.IsNullOrWhiteSpace(w.Text))
+                .ToList();
+            if (words.Count == 0)
+            {
+                continue;
+            }
+
+            pages.Add(new PageLines(page.Number, page.Height, ReconstructLines(words)));
+        }
+
+        var runningFurniture = DetectRunningFurniture(pages);
+
+        // Pass 2: split each page into running header/footer, page number and body.
+        var results = new List<PdfPageText>(pages.Count);
+        foreach (var page in pages)
+        {
+            var extracted = BuildPage(page, runningFurniture);
             if (extracted is not null)
             {
-                yield return extracted;
+                results.Add(extracted);
             }
         }
+
+        return results;
     }
 
-    private static PdfPageText? ExtractPage(Page page)
+    /// <summary>
+    /// Finds the normalized text of lines that recur in the top/bottom margin bands across several
+    /// pages — the running headers and footers. A line that appears in a margin on only one page is
+    /// page-specific content (e.g. a section title that happens to sit near the top), not furniture.
+    /// </summary>
+    private static HashSet<string> DetectRunningFurniture(List<PageLines> pages)
     {
-        var words = page.GetWords()
-            .Where(w => !string.IsNullOrWhiteSpace(w.Text))
-            .ToList();
-        if (words.Count == 0)
+        var frequency = new Dictionary<string, int>();
+
+        foreach (var page in pages)
         {
-            return null;
+            var headerThreshold = page.Height * HeaderBandTop;
+            var footerThreshold = page.Height * FooterBandBottom;
+
+            foreach (var line in page.Lines)
+            {
+                var inBand = line.CenterY >= headerThreshold || line.CenterY <= footerThreshold;
+                if (!inBand || IsPageNumberLine(line))
+                {
+                    continue;
+                }
+
+                var normalized = Normalize(line.Text);
+                if (normalized.Length > 0)
+                {
+                    frequency[normalized] = frequency.GetValueOrDefault(normalized) + 1;
+                }
+            }
         }
 
-        var lines = ReconstructLines(words);
+        return frequency
+            .Where(kv => kv.Value >= RunningRepeatThreshold)
+            .Select(kv => kv.Key)
+            .ToHashSet();
+    }
 
+    private static PdfPageText? BuildPage(PageLines page, HashSet<string> runningFurniture)
+    {
         var headerThreshold = page.Height * HeaderBandTop;
         var footerThreshold = page.Height * FooterBandBottom;
 
-        var headerLines = new List<string>();
+        // The body block is everything between the margin bands; its extent lets us tell an isolated
+        // running header/footer (separated from the body by a wide gap) from body text that merely
+        // runs into the band on a dense page.
+        var middle = page.Lines
+            .Where(l => l.CenterY < headerThreshold && l.CenterY > footerThreshold)
+            .ToList();
+        var bodyHeight = Median((middle.Count > 0 ? middle : page.Lines).Select(l => l.Height));
+        var isolationGap = Math.Max(bodyHeight * 2.5, 1.0);
+        double? bodyTop = middle.Count > 0 ? middle.Max(l => l.CenterY) : null;
+        double? bodyBottom = middle.Count > 0 ? middle.Min(l => l.CenterY) : null;
+
+        var headerParts = new List<string>();
         var bodyLines = new List<Line>();
 
-        foreach (var line in lines)
+        foreach (var line in page.Lines)
         {
             var inHeaderBand = line.CenterY >= headerThreshold;
             var inFooterBand = line.CenterY <= footerThreshold;
 
-            if (inHeaderBand || inFooterBand)
+            if (!inHeaderBand && !inFooterBand)
             {
-                // Strip any numeric-only corner token (the printed page number) so it does not
-                // bleed into the running header. Footer prose is dropped entirely.
+                bodyLines.Add(line);
+                continue;
+            }
+
+            // A printed page number (a margin line of only digits) is dropped wherever it sits —
+            // top, bottom, corner or centre.
+            if (IsPageNumberLine(line))
+            {
+                continue;
+            }
+
+            var recurs = runningFurniture.Contains(Normalize(line.Text));
+            var isolated = inHeaderBand
+                ? bodyTop is null || line.CenterY - bodyTop.Value > isolationGap
+                : bodyBottom is null || bodyBottom.Value - line.CenterY > isolationGap;
+
+            // Treat the line as a running header/footer when it either recurs across pages or sits
+            // alone in the margin, and is short enough to be furniture rather than body.
+            if ((recurs || isolated) && line.Words.Count <= 12)
+            {
                 var remainder = StripCornerNumeral(line);
-                if (remainder.Length > 0 && inHeaderBand)
+                if (remainder.Length > 0)
                 {
-                    headerLines.Add(remainder);
+                    headerParts.Add(remainder);
                 }
             }
             else
@@ -82,7 +164,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
             }
         }
 
-        var header = headerLines.Count > 0 ? string.Join(" ", headerLines) : null;
+        var header = headerParts.Count > 0 ? string.Join(" ", headerParts) : null;
         var content = BuildMarkdown(bodyLines);
 
         if (content.Length == 0 && header is null)
@@ -92,6 +174,17 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
 
         return new PdfPageText(page.Number, content, header);
     }
+
+    /// <summary>True if every token on the line is a numeral — i.e. the line is just a printed page
+    /// number (in a top/bottom corner or centred), not running-header prose.</summary>
+    private static bool IsPageNumberLine(Line line) =>
+        line.Words.Count > 0 && line.Words.All(w => IsCornerNumeral(w.Text));
+
+    /// <summary>Collapses a line to a comparable key (single-spaced, lower-cased) so the same
+    /// running header/footer matches across pages despite incidental spacing differences.</summary>
+    private static string Normalize(string text) =>
+        string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .ToLowerInvariant();
 
     /// <summary>
     /// Reconstructs the page's visual lines in reading order. Words are clustered into rows by
@@ -532,6 +625,9 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         var mid = count / 2;
         return count % 2 == 0 ? (positives[mid - 1] + positives[mid]) / 2.0 : positives[mid];
     }
+
+    /// <summary>A page's reconstructed lines paired with the data needed to classify its margins.</summary>
+    private sealed record PageLines(int Number, double Height, List<Line> Lines);
 
     /// <summary>A word paired with its precomputed vertical centre, so it is calculated once
     /// rather than on every sort comparison and bucketing test.</summary>

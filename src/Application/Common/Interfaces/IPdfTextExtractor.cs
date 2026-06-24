@@ -4,7 +4,8 @@ namespace Application.Common.Interfaces;
 /// <param name="PageNumber">The 1-based physical page index within the source PDF.</param>
 /// <param name="Content">The page body, formatted as markdown (paragraphs separated by blank
 /// lines, large lines promoted to headings). Excludes running headers/footers and page numbers.</param>
-/// <param name="Header">The running-header text for the page, or <c>null</c> if none was detected.</param>
+/// <param name="Header">The page's running-header or running-footer text (e.g. a chapter/section
+/// running head, wherever it sits on the page), or <c>null</c> if none was detected.</param>
 public sealed record PdfPageText(int PageNumber, string Content, string? Header);
 
 /// <summary>
