@@ -21,10 +21,25 @@ public sealed record SearchPagesQuery(string Query, List<string>? Tags) : IReque
 
         public async Task<Result<SearchResponseDto>> Handle(SearchPagesQuery request, CancellationToken ct)
         {
+            var keywordQuery = SwedishQueryPreprocessor.Process(request.Query);
+            var tokens = keywordQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            // Header matches are strongly boosted: a match in the chapter title is far more
+            // indicative than a match buried in body text.
             var query = db.DocumentPages
                 .Statistics(out var stats)
-                .Search(x => x.Content, request.Query)
-                .Search(x => x.Header, request.Query);
+                .Search(x => x.Header,  keywordQuery, boost: 8m)
+                .Search(x => x.Content, keywordQuery);
+
+            // For multi-word queries, also search for the exact phrase (Lucene phrase syntax).
+            // A phrase match is rewarded above scattered keyword matches.
+            if (tokens.Length > 1)
+            {
+                var phrase = $"\"{keywordQuery}\"";
+                query = query
+                    .Search(x => x.Header,  phrase, boost: 20m)
+                    .Search(x => x.Content, phrase, boost: 10m);
+            }
 
             if (request.Tags is { Count: > 0 })
             {
@@ -43,7 +58,7 @@ public sealed record SearchPagesQuery(string Query, List<string>? Tags) : IReque
             var results = pages
                 .Select(page =>
                 {
-                    var content = BoldMatches(TrimToFirstMatch(page.Content, request.Query), request.Query);
+                    var content = BoldMatches(TrimToFirstMatch(page.Content, keywordQuery), keywordQuery);
                     return new SearchResultDto(
                         page.SourceFileName,
                         page.PageNumber,
@@ -54,8 +69,9 @@ public sealed record SearchPagesQuery(string Query, List<string>? Tags) : IReque
                 })
                 .ToList();
 
-            Log.Information("Search for {Query} matched {TotalHits} page(s)", request.Query, stats.TotalResults);
-            return Result.Success(new SearchResponseDto(request.Query, (int)stats.TotalResults, results));
+            Log.Information("Search for {Query} (processed: {ProcessedQuery}) matched {TotalHits} page(s)",
+                request.Query, keywordQuery, stats.TotalResults);
+            return Result.Success(new SearchResponseDto(request.Query, keywordQuery, (int)stats.TotalResults, results));
         }
 
         private static string TrimToFirstMatch(string content, string query)

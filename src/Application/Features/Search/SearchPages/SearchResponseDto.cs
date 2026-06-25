@@ -10,5 +10,6 @@ public sealed record SearchResultDto(
 
 public sealed record SearchResponseDto(
     string Query,
+    string ProcessedQuery,
     int TotalHits,
     List<SearchResultDto> Results);

@@ -191,6 +191,74 @@ public sealed class SearchPagesTests(RavenTestFactory factory) : IClassFixture<R
     }
 
     [Fact]
+    public async Task Search_Should_Strip_Swedish_Stop_Words_From_Query()
+    {
+        var client = factory.CreateClient();
+
+        const string token = "kvarlitorp";
+        var pdf = TestPdf.Create("intro", $"the {token} appears here");
+        await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdf, "stopword-test.pdf");
+        factory.WaitForIndexing();
+
+        var (status, body) = await client.GetApiAsync<SearchResponseDto>($"/search?query=hur+fungerar+{token}");
+
+        status.ShouldBe(HttpStatusCode.OK);
+        body!.Data!.TotalHits.ShouldBeGreaterThanOrEqualTo(1);
+        body.Data.Results.ShouldContain(r => r.SourceFileName == "stopword-test.pdf");
+        body.Data.ProcessedQuery.ShouldBe(token);
+    }
+
+    [Fact]
+    public async Task Search_Should_Rank_Phrase_Match_Above_Scattered_Keywords()
+    {
+        var client = factory.CreateClient();
+
+        // Page 1: the two tokens appear adjacent — phrase match applies
+        var pdfPhrase = TestPdf.Create($"the svordal krimbot rule triggers when attacking");
+        await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdfPhrase, "phrase-match.pdf");
+
+        // Page 2: same tokens scattered across sentences — no phrase match
+        var pdfScattered = TestPdf.Create("svordal is rolled at the start of the round. separately, krimbot is applied.");
+        await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdfScattered, "scattered-match.pdf");
+
+        factory.WaitForIndexing();
+
+        var (status, body) = await client.GetApiAsync<SearchResponseDto>("/search?query=svordal+krimbot");
+
+        status.ShouldBe(HttpStatusCode.OK);
+        body!.Data!.Results.Count.ShouldBeGreaterThanOrEqualTo(2);
+        body.Data.Results[0].SourceFileName.ShouldBe("phrase-match.pdf");
+    }
+
+    [Fact]
+    public async Task Search_Should_Rank_Header_Match_Above_Content_Only_Match()
+    {
+        var client = factory.CreateClient();
+
+        const string token = "vrintoplex";
+
+        // Page with the token in the chapter header
+        var pdfHeader = TestPdf.CreateStructuredPage(
+            header: $"KAPITEL {token}",
+            pageNumber: "42",
+            heading: "Overview",
+            "This page has unrelated body text about other topics entirely.");
+        await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdfHeader, "header-boost.pdf");
+
+        // Page with the token only in body content
+        var pdfContent = TestPdf.Create($"the {token} rule is described in the body of this page in full detail");
+        await client.PostPdfAsync<IngestDocumentResponse>("/documents", pdfContent, "content-only.pdf");
+
+        factory.WaitForIndexing();
+
+        var (status, body) = await client.GetApiAsync<SearchResponseDto>($"/search?query={token}");
+
+        status.ShouldBe(HttpStatusCode.OK);
+        body!.Data!.Results.Count.ShouldBeGreaterThanOrEqualTo(2);
+        body.Data.Results[0].SourceFileName.ShouldBe("header-boost.pdf");
+    }
+
+    [Fact]
     public async Task Ingest_Should_Normalize_Tags_To_Lowercase()
     {
         var client = factory.CreateClient();
