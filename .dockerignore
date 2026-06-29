@@ -6,3 +6,5 @@ tests/
 *.user
 .git/
 .github/
+.env*
+certificates/
