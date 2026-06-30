@@ -29,10 +29,13 @@ internal static class PdfTableExtractor
     private const double MinRuleWidth = 40.0;
     private const double MaxRuleThickness = 2.5;
 
-    // A shaded row background is a filled rectangle whose height is a text-row tall (not a thin
-    // rule, not a tall callout box / sidebar). Its top and bottom edges act as row boundaries.
+    // A shaded row background is a filled rectangle as tall as a table row. A row's cell text often
+    // wraps to several lines, so the band can be a good deal taller than a single line of body text;
+    // the ceiling only rules out multi-paragraph callout boxes / sidebars (which run well past this),
+    // not tall wrapped rows. Its top and bottom edges act as row boundaries. A lone over-tall box is
+    // still harmless: it yields only two rules (< MinRulesForTable) and so never forms a table.
     private const double MinRowBandHeight = 6.0;
-    private const double MaxRowBandHeight = 40.0;
+    private const double MaxRowBandHeight = 80.0;
 
     // A shaded row's fill must be a light background tint: dark enough not to be page white, light
     // enough not to be a black title bar or a saturated colour tag (those are not row backgrounds).

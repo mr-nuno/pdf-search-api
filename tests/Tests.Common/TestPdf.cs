@@ -268,6 +268,55 @@ public static class TestPdf
     }
 
     /// <summary>
+    /// Builds a single-page PDF with a zebra-striped two-column table whose cells WRAP to several
+    /// lines, so each shaded row background is much taller than a single line of body text — the
+    /// layout of the monster-attack tables in the real source PDFs (a die-roll column beside a
+    /// multi-line description). Exercises detecting shaded rows whose band height exceeds a single
+    /// text line, the case that was previously discarded by the row-height ceiling.
+    /// </summary>
+    public static byte[] CreateWrappedRowZebraTablePage()
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        const double left = 54, numberX = 62, textX = 110, width = 300;
+        const double headerY = 730;
+        const double firstRowTop = 715, rowPitch = 56, bandHeight = 48, lineLeading = 14;
+
+        (string Number, string[] Lines)[] rows =
+        [
+            ("1", ["First attack strikes hard", "and rattles the foe"]),
+            ("2", ["Second attack lands", "a glancing blow"]),
+            ("3", ["Third attack hits", "with crushing force"]),
+            ("4", ["Fourth attack ends", "the bout outright"]),
+        ];
+
+        // Shaded backgrounds for the even-indexed rows first (colour reset before any text is placed).
+        // Each band is taller than a single text line (it spans the row's wrapped lines plus padding).
+        for (var i = 0; i < rows.Length; i += 2)
+        {
+            var top = firstRowTop - i * rowPitch;
+            ShadeRow(page, left, bottom: top - bandHeight, width, height: bandHeight);
+        }
+
+        page.AddText("T6", 12, new PdfPoint(numberX, headerY), font);
+        page.AddText("ATTACK", 12, new PdfPoint(textX, headerY), font);
+
+        for (var i = 0; i < rows.Length; i++)
+        {
+            var top = firstRowTop - i * rowPitch;
+            page.AddText(rows[i].Number, 12, new PdfPoint(numberX, top - lineLeading), font);
+            for (var j = 0; j < rows[i].Lines.Length; j++)
+            {
+                page.AddText(rows[i].Lines[j], 12, new PdfPoint(textX, top - lineLeading - j * lineLeading), font);
+            }
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
     /// Builds a single-page PDF with three zebra-striped two-column tables sitting side by side,
     /// their rows vertically aligned (so their row boundaries interleave when read by vertical
     /// position). Exercises splitting horizontally-separated tables into independent regions rather
@@ -315,6 +364,32 @@ public static class TestPdf
 
             page.AddText(lines[i], 12, new PdfPoint(60, y), font);
             y -= 22;
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF with a SINGLE tall shaded box (taller than a non-wrapped row but
+    /// still well short of a multi-paragraph sidebar) behind ordinary single-column prose — a
+    /// highlighted callout, not a table. Used to check that raising the row-height ceiling to admit
+    /// tall wrapped rows did not open a path for a tall callout to be fabricated into a table: a lone
+    /// shaded box yields only two row boundaries (below the minimum) and has no second column.
+    /// </summary>
+    public static byte[] CreateTallShadedCalloutPage(params string[] lines)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        const double top = 715, boxHeight = 70; // tall enough to clear the old 40pt ceiling
+        ShadeRow(page, left: 54, bottom: top - boxHeight, width: 480, height: boxHeight);
+
+        var y = top - 15;
+        foreach (var line in lines)
+        {
+            page.AddText(line, 12, new PdfPoint(60, y), font);
+            y -= 16;
         }
 
         return builder.Build();
