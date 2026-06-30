@@ -1,17 +1,21 @@
 using System.Text;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
+using UglyToad.PdfPig.Graphics.Colors;
 
 namespace Infrastructure.Pdf;
 
 /// <summary>
-/// Reconstructs ruled tables from a PDF page as GitHub-flavoured markdown tables. Detection is
-/// gated on drawn horizontal ruling lines: a region is only treated as a table when several
-/// stacked horizontal rules of similar width are present (the rows). These tables draw no vertical
-/// lines, so columns are recovered from the x-alignment of the cells across rows, and each word is
-/// assigned to the nearest column — robust to the few-point drift between header labels and cells.
+/// Reconstructs tables from a PDF page as GitHub-flavoured markdown tables. A region is only
+/// treated as a table when its rows are marked by a clear visual delimiter — either drawn
+/// horizontal ruling lines, or shaded (filled) row backgrounds (zebra striping) — so ordinary
+/// prose, which has neither, is never affected. Several stacked row boundaries of similar width
+/// are required (the rows). Columns are recovered from the x-alignment of the cells across rows,
+/// and each word is assigned to the nearest column — robust to the few-point drift between header
+/// labels and cells.
 ///
-/// Because detection requires ruling lines, ordinary prose (which has none) is never affected.
+/// Multiple tables can sit side by side on a page; their row boundaries are first partitioned into
+/// horizontally-separated regions so they are reconstructed independently rather than fused.
 /// </summary>
 internal static class PdfTableExtractor
 {
@@ -25,6 +29,21 @@ internal static class PdfTableExtractor
     private const double MinRuleWidth = 40.0;
     private const double MaxRuleThickness = 2.5;
 
+    // A shaded row background is a filled rectangle whose height is a text-row tall (not a thin
+    // rule, not a tall callout box / sidebar). Its top and bottom edges act as row boundaries.
+    private const double MinRowBandHeight = 6.0;
+    private const double MaxRowBandHeight = 40.0;
+
+    // A shaded row's fill must be a light background tint: dark enough not to be page white, light
+    // enough not to be a black title bar or a saturated colour tag (those are not row backgrounds).
+    private const double MinShadeLuminance = 0.25;
+    private const double MaxShadeLuminance = 0.97;
+
+    // The cells of one shaded row abut (a single visual band), so two filled cell-boxes join the
+    // same row only when they vertically overlap and are no further apart horizontally than this —
+    // which keeps the cells of side-by-side tables (separated by a gutter) in different rows.
+    private const double SameRowCellGap = 6.0;
+
     // Rules within this vertical distance are the same drawn line (deduplicated); two rules belong
     // to the same table only if the row between them is no taller than this (wrapped cells included).
     private const double SameRuleEpsilon = 2.0;
@@ -35,8 +54,12 @@ internal static class PdfTableExtractor
 
     public static IReadOnlyList<DetectedTable> Detect(Page page)
     {
-        var rules = HorizontalRules(page);
-        if (rules.Count < MinRulesForTable)
+        // Row boundaries come from two visual delimiters: thin drawn ruling lines and the top/bottom
+        // edges of shaded row backgrounds. A table with a stroked grid over a narrow column and
+        // shading across the full width thus reaches the full width, and a table with shading but no
+        // rules is still recovered.
+        var rawRules = new List<Rule>([.. HorizontalRules(page), .. ShadedRowRules(page)]);
+        if (rawRules.Count < MinRulesForTable)
         {
             return [];
         }
@@ -46,28 +69,38 @@ internal static class PdfTableExtractor
             .ToList();
 
         var tables = new List<DetectedTable>();
-        foreach (var group in GroupRules(rules))
-        {
-            if (group.Count < MinRulesForTable)
-            {
-                continue;
-            }
 
-            var table = BuildTable(words, group);
-            if (table is not null)
+        // Side-by-side tables are split into horizontally-separated regions FIRST, before the rules
+        // are deduplicated by vertical position: their rows sit at the same Y, so a global Y-merge
+        // would otherwise fuse the three tables' co-aligned boundaries into full-width rules and
+        // scramble them into one table.
+        foreach (var region in ClusterByColumn(rawRules))
+        {
+            var merged = MergeByPosition(region);
+            foreach (var group in GroupRules(merged))
             {
-                tables.Add(table);
+                if (group.Count < MinRulesForTable)
+                {
+                    continue;
+                }
+
+                var table = BuildTable(words, group);
+                if (table is not null)
+                {
+                    tables.Add(table);
+                }
             }
         }
 
         return tables;
     }
 
-    /// <summary>Collects the page's horizontal ruling lines (wide, thin paths), deduplicated by
-    /// vertical position with their horizontal extents merged.</summary>
+    /// <summary>Collects the page's horizontal ruling lines: subpaths whose bounding box is wide and
+    /// very thin. Returned raw (not deduplicated) — <see cref="MergeByPosition"/> collapses coincident
+    /// lines once they are pooled with the shaded-row edges.</summary>
     private static List<Rule> HorizontalRules(Page page)
     {
-        var raw = new List<Rule>();
+        var rules = new List<Rule>();
         foreach (var path in page.Paths)
         {
             foreach (var subpath in path)
@@ -81,13 +114,115 @@ internal static class PdfTableExtractor
                 var r = box.Value;
                 if (r.Width >= MinRuleWidth && r.Height <= MaxRuleThickness)
                 {
-                    raw.Add(new Rule(r.Bottom, r.Left, r.Right));
+                    rules.Add(new Rule(r.Bottom, r.Left, r.Right));
                 }
             }
         }
 
+        return rules;
+    }
+
+    /// <summary>Collects row boundaries from shaded row backgrounds: filled rectangles set in a light
+    /// background tint whose height is a text-row tall. The cells of one shaded row are filled as
+    /// separate boxes (e.g. a narrow index column beside a wide text column), so boxes are grouped
+    /// into rows by overlapping vertical position and each row's horizontal extent is unioned; the
+    /// row's top and bottom edges are then emitted as rules. With alternating (zebra) shading every
+    /// row is still bounded — the gap between one shaded rect's bottom and the next's top is exactly
+    /// the unshaded row between them.</summary>
+    private static List<Rule> ShadedRowRules(Page page)
+    {
+        var boxes = new List<PdfRectangle>();
+        foreach (var path in page.Paths)
+        {
+            if (!path.IsFilled || !IsRowShade(path.FillColor))
+            {
+                continue;
+            }
+
+            foreach (var subpath in path)
+            {
+                var box = subpath.GetBoundingRectangle();
+                if (box is null)
+                {
+                    continue;
+                }
+
+                var r = box.Value;
+                if (r.Width >= MinRuleWidth / 2 && r.Height >= MinRowBandHeight && r.Height <= MaxRowBandHeight)
+                {
+                    boxes.Add(r);
+                }
+            }
+        }
+
+        var rules = new List<Rule>();
+        foreach (var row in GroupBoxesIntoRows(boxes))
+        {
+            var left = row.Min(b => b.Left);
+            var right = row.Max(b => b.Right);
+            if (right - left < MinRuleWidth)
+            {
+                continue; // a lone narrow shaded cell is not a row
+            }
+
+            rules.Add(new Rule(row.Max(b => b.Top), left, right));
+            rules.Add(new Rule(row.Min(b => b.Bottom), left, right));
+        }
+
+        return rules;
+    }
+
+    /// <summary>Groups filled cell-boxes into shaded rows: a box joins a row when it vertically
+    /// overlaps and horizontally abuts one of the row's boxes. The horizontal-adjacency test keeps
+    /// the cells of one table's row together (they share an edge) while separating side-by-side
+    /// tables, whose cells are divided by a gutter wider than <see cref="SameRowCellGap"/>.</summary>
+    private static List<List<PdfRectangle>> GroupBoxesIntoRows(List<PdfRectangle> boxes)
+    {
+        static bool VerticallyOverlap(PdfRectangle a, PdfRectangle b) =>
+            Math.Min(a.Top, b.Top) - Math.Max(a.Bottom, b.Bottom) > 0;
+
+        static bool HorizontallyAdjacent(PdfRectangle a, PdfRectangle b) =>
+            Math.Max(a.Left, b.Left) - Math.Min(a.Right, b.Right) <= SameRowCellGap;
+
+        var rows = new List<List<PdfRectangle>>();
+        foreach (var box in boxes.OrderByDescending(b => (b.Top + b.Bottom) / 2.0))
+        {
+            var row = rows.FirstOrDefault(r => r.Any(b => VerticallyOverlap(b, box) && HorizontallyAdjacent(b, box)));
+            if (row is null)
+            {
+                rows.Add([box]);
+            }
+            else
+            {
+                row.Add(box);
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>True if a fill colour is a light background tint — dark enough not to be page white,
+    /// light enough not to be a black title bar or a saturated colour tag (which are not rows).</summary>
+    private static bool IsRowShade(IColor? color)
+    {
+        if (color is null)
+        {
+            return false;
+        }
+
+        var (r, g, b) = color.ToRGBValues();
+        var luminance = 0.2126 * (double)r + 0.7152 * (double)g + 0.0722 * (double)b;
+        return luminance is > MinShadeLuminance and < MaxShadeLuminance;
+    }
+
+    /// <summary>Pools rules (from ruling lines and shaded-row edges), sorts them top-to-bottom and
+    /// deduplicates by vertical position, unioning the horizontal extents of coincident rules — so a
+    /// grid line drawn over only one column and a shade spanning the full row collapse into one rule
+    /// covering the full width.</summary>
+    private static List<Rule> MergeByPosition(List<Rule> rules)
+    {
         var merged = new List<Rule>();
-        foreach (var rule in raw.OrderByDescending(r => r.Y))
+        foreach (var rule in rules.OrderByDescending(r => r.Y))
         {
             if (merged.Count > 0 && merged[^1].Y - rule.Y <= SameRuleEpsilon)
             {
@@ -105,6 +240,33 @@ internal static class PdfTableExtractor
         }
 
         return merged;
+    }
+
+    /// <summary>Partitions rules into horizontally-separated regions (tables sitting side by side on
+    /// the page), so their row boundaries — interleaved when the whole page is sorted by Y — are not
+    /// fused. Rules are clustered greedily by horizontal overlap against a running extent. Identity
+    /// for a page with a single column of tables.</summary>
+    private static List<List<Rule>> ClusterByColumn(List<Rule> rules)
+    {
+        var regions = new List<(double Left, double Right, List<Rule> Rules)>();
+
+        foreach (var rule in rules.OrderBy(r => r.Left))
+        {
+            var region = regions.FirstOrDefault(x => Overlap(new Rule(0, x.Left, x.Right), rule) > 0.5);
+            if (region.Rules is null)
+            {
+                regions.Add((rule.Left, rule.Right, [rule]));
+            }
+            else
+            {
+                region.Rules.Add(rule);
+                var i = regions.IndexOf(region);
+                regions[i] = (Math.Min(region.Left, rule.Left), Math.Max(region.Right, rule.Right), region.Rules);
+            }
+        }
+
+        // Each region's rules are returned top-to-bottom, as GroupRules expects.
+        return regions.Select(r => r.Rules.OrderByDescending(x => x.Y).ToList()).ToList();
     }
 
     /// <summary>Groups vertically-stacked rules of similar horizontal extent into table candidates.</summary>
@@ -199,6 +361,35 @@ internal static class PdfTableExtractor
             {
                 dataBands.Add(band);
             }
+        }
+
+        // A zebra table whose final row is unshaded has no rule beneath it (only the shaded rows
+        // draw edges). Capture that trailing row from the words just below the last rule, walking
+        // down only while consecutive lines stay within one row's leading: the table's own wrapped
+        // last row is taken, but a heading or paragraph that follows — set off by a larger gap — is
+        // not. Then extend the table region down to enclose the captured row.
+        var leading = Math.Max(rowHeight * 2.5, 14.0);
+        var below = words
+            .Where(w => InRegionX(w) && CenterY(w.BoundingBox) < bottom && CenterY(w.BoundingBox) > bottom - MaxRowHeight)
+            .ToList();
+        var trailing = new List<Word>();
+        var previousY = bottom;
+        foreach (var line in GroupLines(below, rowHeight))
+        {
+            var lineY = line.Average(w => CenterY(w.BoundingBox));
+            if (previousY - lineY > leading)
+            {
+                break;
+            }
+
+            trailing.AddRange(line);
+            previousY = lineY;
+        }
+
+        if (trailing.Count > 0)
+        {
+            dataBands.Add(trailing);
+            bottom = trailing.Min(w => w.BoundingBox.Bottom);
         }
 
         if (dataBands.Count == 0)

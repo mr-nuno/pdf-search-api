@@ -235,6 +235,131 @@ public static class TestPdf
         return builder.Build();
     }
 
+    /// <summary>
+    /// Builds a single-page PDF with a zebra-striped two-column table: alternating rows carry a
+    /// light filled background and there are NO ruling lines, so detection must come from the shaded
+    /// row backgrounds. The first and third rows are shaded, the second sits in the unshaded gap
+    /// between them, and the fourth is left unshaded with no rule beneath it — exercising trailing-row
+    /// capture. Mirrors the d20 "roll table" layout of the real source PDFs.
+    /// </summary>
+    public static byte[] CreateZebraTablePage()
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        DrawZebraTable(
+            page,
+            font,
+            left: 54,
+            numberX: 62,
+            textX: 100,
+            width: 250,
+            header: ("T20", "RESULT"),
+            rows:
+            [
+                ("1", "Alpha one"),
+                ("2", "Beta two"),
+                ("3", "Gamma three"),
+                ("4", "Delta four"),
+            ]);
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF with three zebra-striped two-column tables sitting side by side,
+    /// their rows vertically aligned (so their row boundaries interleave when read by vertical
+    /// position). Exercises splitting horizontally-separated tables into independent regions rather
+    /// than fusing them into one scrambled wide table — the layout of the real appearance/quirk
+    /// roll-table pages.
+    /// </summary>
+    public static byte[] CreateSideBySideZebraTablesPage()
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        DrawZebraTable(page, font, left: 40, numberX: 46, textX: 70, width: 150,
+            header: ("T6", "LEFT"),
+            rows: [("1", "left a"), ("2", "left b"), ("3", "left c")]);
+        DrawZebraTable(page, font, left: 220, numberX: 226, textX: 250, width: 150,
+            header: ("T6", "MID"),
+            rows: [("4", "mid a"), ("5", "mid b"), ("6", "mid c")]);
+        DrawZebraTable(page, font, left: 400, numberX: 406, textX: 430, width: 150,
+            header: ("T6", "RIGHT"),
+            rows: [("7", "right a"), ("8", "right b"), ("9", "right c")]);
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a single-page PDF with several stacked shaded bands behind ordinary single-column
+    /// prose — a highlighted callout, not a table (its rows have no second column). Used to check
+    /// that shaded backgrounds alone never turn prose into a table: with no column structure the
+    /// region is rejected and the text stays prose.
+    /// </summary>
+    public static byte[] CreateShadedCalloutPage(params string[] lines)
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+        var page = builder.AddPage(PageSize.A4); // 595 x 842 pt
+
+        double y = 700;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (i % 2 == 0)
+            {
+                ShadeRow(page, left: 54, bottom: y - 5, width: 480, height: 18);
+            }
+
+            page.AddText(lines[i], 12, new PdfPoint(60, y), font);
+            y -= 22;
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>Draws one zebra-striped two-column table: a header row of two labels, then data rows
+    /// at a fixed pitch with the even-indexed rows given a light filled background and no rules.</summary>
+    private static void DrawZebraTable(
+        PdfPageBuilder page,
+        PdfDocumentBuilder.AddedFont font,
+        double left,
+        double numberX,
+        double textX,
+        double width,
+        (string Number, string Text) header,
+        (string Number, string Text)[] rows)
+    {
+        const double headerY = 740, firstRowY = 712, rowPitch = 22;
+
+        // Shaded backgrounds first: SetTextAndFillColor also tints text, so all fills are drawn and
+        // the colour reset before any text is placed (text stays black).
+        for (var i = 0; i < rows.Length; i += 2)
+        {
+            ShadeRow(page, left, bottom: firstRowY - i * rowPitch - 5, width, height: 18);
+        }
+
+        page.AddText(header.Number, 12, new PdfPoint(numberX, headerY), font);
+        page.AddText(header.Text, 12, new PdfPoint(textX, headerY), font);
+
+        for (var i = 0; i < rows.Length; i++)
+        {
+            var y = firstRowY - i * rowPitch;
+            page.AddText(rows[i].Number, 12, new PdfPoint(numberX, y), font);
+            page.AddText(rows[i].Text, 12, new PdfPoint(textX, y), font);
+        }
+    }
+
+    /// <summary>Fills one light-tinted row background (no text), then resets the colour.</summary>
+    private static void ShadeRow(PdfPageBuilder page, double left, double bottom, double width, double height)
+    {
+        page.SetTextAndFillColor(235, 222, 219);
+        page.DrawRectangle(new PdfPoint(left, bottom), width, height, 1, fill: true);
+        page.ResetColor();
+    }
+
     private static void AddColumn(
         PdfPageBuilder page,
         PdfDocumentBuilder.AddedFont font,
