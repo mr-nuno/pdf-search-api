@@ -174,6 +174,64 @@ public class PdfPigTextExtractorTests
     }
 
     [Fact]
+    public void Reconstructs_Shaded_Row_Table_As_Markdown_Without_Rules()
+    {
+        // The rows are marked only by alternating shaded backgrounds — no ruling lines — so this
+        // exercises the shaded-row detection path, including the unshaded trailing row that has no
+        // rule beneath it.
+        var pdf = TestPdf.CreateZebraTablePage();
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        page.Content.ShouldContain("| T20 | RESULT |");
+        page.Content.ShouldContain("| --- | --- |");
+        page.Content.ShouldContain("| 1 | Alpha one |");
+        // The unshaded gap row between two shaded rows is recovered...
+        page.Content.ShouldContain("| 2 | Beta two |");
+        // ...and the trailing unshaded last row (no rule below it) is captured too.
+        page.Content.ShouldContain("| 4 | Delta four |");
+    }
+
+    [Fact]
+    public void Splits_SideBySide_Tables_Into_Separate_Tables()
+    {
+        // Three zebra tables sit side by side with vertically-aligned rows. They must be
+        // reconstructed as three independent two-column tables, not fused into one wide table.
+        var pdf = TestPdf.CreateSideBySideZebraTablesPage();
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        page.Content.ShouldContain("| T6 | LEFT |");
+        page.Content.ShouldContain("| T6 | MID |");
+        page.Content.ShouldContain("| T6 | RIGHT |");
+        page.Content.ShouldContain("| 1 | left a |");
+        page.Content.ShouldContain("| 5 | mid b |");
+        page.Content.ShouldContain("| 9 | right c |");
+
+        // The tables are never fused: no row carries cells from two tables, and each table keeps two
+        // columns (its separator row is exactly two columns wide).
+        page.Content.ShouldNotContain("| left a | 4 |");
+        page.Content.ShouldNotContain("| --- | --- | --- |");
+    }
+
+    [Fact]
+    public void Does_Not_Turn_Shaded_Prose_Into_A_Table()
+    {
+        // A highlighted callout: prose on shaded bands, but with no second column. It must stay
+        // prose — shaded backgrounds alone never fabricate a table.
+        var pdf = TestPdf.CreateShadedCalloutPage(
+            "The ancient prophecy warns of a coming darkness",
+            "that will sweep across the northern realms",
+            "unless the chosen hero claims the relic first");
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        page.Content.ShouldNotContain("|");
+        page.Content.ShouldContain("ancient prophecy");
+        page.Content.ShouldContain("northern realms");
+    }
+
+    [Fact]
     public void Omits_Blank_Pages_And_Keeps_Physical_PageNumbers()
     {
         var pdf = TestPdf.Create("first page content", "   ", "third page content");
