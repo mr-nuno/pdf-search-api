@@ -193,6 +193,44 @@ public class PdfPigTextExtractorTests
     }
 
     [Fact]
+    public void Reconstructs_Zebra_Table_With_Wrapped_Rows_As_Markdown()
+    {
+        // The shaded rows wrap to several lines, so each shaded band is much taller than one line of
+        // body text — the monster-attack table layout. The band must still be recognised as a single
+        // row (it previously exceeded the row-height ceiling and was discarded), and its wrapped cell
+        // text joined into one cell.
+        var pdf = TestPdf.CreateWrappedRowZebraTablePage();
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        page.Content.ShouldContain("| T6 | ATTACK |");
+        page.Content.ShouldContain("| --- | --- |");
+        page.Content.ShouldContain("| 1 | First attack strikes hard and rattles the foe |");
+        // The unshaded gap row between two shaded rows is recovered...
+        page.Content.ShouldContain("| 2 | Second attack lands a glancing blow |");
+        // ...and the trailing unshaded last row (no rule below it) is captured too.
+        page.Content.ShouldContain("| 4 | Fourth attack ends the bout outright |");
+    }
+
+    [Fact]
+    public void Does_Not_Turn_Tall_Shaded_Callout_Into_A_Table()
+    {
+        // A single tall shaded box behind single-column prose. Raising the row-height ceiling lets the
+        // box clear the height gate, but it must still stay prose: one box is below the minimum row
+        // count for a table and has no second column.
+        var pdf = TestPdf.CreateTallShadedCalloutPage(
+            "The ancient prophecy warns of a coming darkness",
+            "that will sweep across the northern realms",
+            "unless the chosen hero claims the relic first");
+
+        var page = Extract(pdf).ShouldHaveSingleItem();
+
+        page.Content.ShouldNotContain("|");
+        page.Content.ShouldContain("ancient prophecy");
+        page.Content.ShouldContain("northern realms");
+    }
+
+    [Fact]
     public void Splits_SideBySide_Tables_Into_Separate_Tables()
     {
         // Three zebra tables sit side by side with vertically-aligned rows. They must be
